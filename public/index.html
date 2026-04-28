@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MMW Site Intelligence</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Barlow:wght@300;400;500;600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --green:         #28AB83;
+    --green-mid:     #1e9472;
+    --green-light:   #E5F5F0;
+    --green-lighter: #f0faf7;
+    --dark:          #323547;
+    --dark-mid:      #4a4e65;
+    --white:         #ffffff;
+    --bg:            #F7FAF9;
+    --bg-card:       #ffffff;
+    --border:        #D9EDE7;
+    --border-strong: #b8ddd4;
+    --text-muted:    #7a8a9a;
+    --text-secondary:#4f5d6a;
+    --amber:         #92600a;
+    --amber-bg:      #fef6e4;
+    --red:           #a32d2d;
+    --red-bg:        #fdf0f0;
+    --mono:          'Consolas', 'SF Mono', monospace;
+    --radius:        12px;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'Barlow', sans-serif;
+    background: var(--bg);
+    color: var(--dark);
+    min-height: 100vh;
+    font-size: 14px;
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed; inset: 0; z-index: 0;
+    background-image: radial-gradient(circle, #c5ddd7 1px, transparent 1px);
+    background-size: 28px 28px;
+    opacity: 0.4;
+    pointer-events: none;
+  }
+
+  /* ── NAV ── */
+  nav {
+    position: sticky; top: 0; z-index: 100;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 40px;
+    height: 64px;
+    background: var(--dark);
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .nav-title {
+    font-family: 'Poppins', sans-serif;
+    font-weight: 700;
+    color: var(--white);
+    font-size: 16px;
+    letter-spacing: 0.02em;
+  }
+  .nav-title span { color: var(--green); }
+  .nav-badge {
+    display: flex; align-items: center; gap: 7px;
+    font-family: 'Barlow', sans-serif;
+    font-size: 11px; font-weight: 500; letter-spacing: 0.08em;
+    color: var(--green);
+    background: rgba(40,171,131,0.12);
+    border: 1px solid rgba(40,171,131,0.3);
+    padding: 5px 14px; border-radius: 100px;
+    text-transform: uppercase;
+  }
+  .nav-badge::before {
+    content: ''; width: 6px; height: 6px;
+    background: var(--green); border-radius: 50%;
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%,100% { opacity: 1; }
+    50%     { opacity: 0.4; }
+  }
+
+  /* ── LAYOUT ── */
+  main {
+    position: relative; z-index: 1;
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 32px 40px 80px;
+  }
+
+  .header {
+    margin-bottom: 24px;
+  }
+  .header h1 {
+    font-family: 'Poppins', sans-serif;
+    font-weight: 700;
+    font-size: 28px;
+    color: var(--dark);
+    letter-spacing: -0.01em;
+  }
+  .header p {
+    color: var(--text-secondary);
+    font-size: 14px;
+    margin-top: 4px;
+    max-width: 640px;
+  }
+
+  /* ── TABS ── */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 4px;
+    margin-bottom: 24px;
+    width: fit-content;
+  }
+  .tab {
+    border: none;
+    background: transparent;
+    padding: 10px 20px;
+    font-family: 'Barlow', sans-serif;
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-radius: 8px;
+    transition: all 0.15s ease;
+    letter-spacing: 0.02em;
+  }
+  .tab:hover { color: var(--dark); }
+  .tab.active {
+    background: var(--green);
+    color: var(--white);
+  }
+  .tab[disabled] {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .tab-badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(40,171,131,0.12);
+    color: var(--green);
+    margin-left: 8px;
+    vertical-align: 1px;
+  }
+  .tab.active .tab-badge { background: rgba(255,255,255,0.2); color: var(--white); }
+
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* ── CARDS ── */
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px;
+    margin-bottom: 20px;
+  }
+  .card-title {
+    font-family: 'Poppins', sans-serif;
+    font-weight: 600;
+    font-size: 16px;
+    color: var(--dark);
+    margin-bottom: 4px;
+  }
+  .card-sub {
+    color: var(--text-muted);
+    font-size: 13px;
+    margin-bottom: 20px;
+  }
+
+  /* ── FORM ── */
+  .form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .form-grid.full { grid-template-columns: 1fr; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  input[type="text"], input[type="number"], textarea {
+    font-family: 'Barlow', sans-serif;
+    font-size: 14px;
+    color: var(--dark);
+    background: var(--white);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    padding: 10px 12px;
+    transition: border-color 0.15s ease;
+    width: 100%;
+  }
+  input[type="text"]:focus, input[type="number"]:focus, textarea:focus {
+    outline: none;
+    border-color: var(--green);
+    box-shadow: 0 0 0 3px rgba(40,171,131,0.12);
+  }
+  .checkbox-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+    margin-bottom: 16px;
+  }
+  .checkbox-row label {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 500;
+  }
+  input[type="checkbox"] { accent-color: var(--green); }
+
+  /* ── BUTTONS ── */
+  .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+  button.primary, button.secondary, button.danger {
+    font-family: 'Barlow', sans-serif;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 10px 22px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    letter-spacing: 0.02em;
+    transition: transform 0.1s ease, background 0.15s ease;
+  }
+  button.primary {
+    background: var(--green);
+    color: var(--white);
+  }
+  button.primary:hover { background: var(--green-mid); }
+  button.primary:active { transform: translateY(1px); }
+  button.primary[disabled] {
+    background: #b8ddd4;
+    cursor: not-allowed;
+  }
+  button.secondary {
+    background: var(--white);
+    color: var(--dark);
+    border-color: var(--border-strong);
+  }
+  button.secondary:hover { background: var(--green-lighter); }
+  button.danger {
+    background: var(--white);
+    color: var(--red);
+    border-color: #e8b4b4;
+  }
+  button.danger:hover { background: var(--red-bg); }
+
+  /* ── PROGRESS ── */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .stat {
+    background: var(--green-lighter);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .stat-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .stat-value {
+    font-family: 'Poppins', sans-serif;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--dark);
+  }
+  .stat-value.green { color: var(--green); }
+  .stat-value.amber { color: var(--amber); }
+  .stat-value.red   { color: var(--red); }
+
+  .progress-bar {
+    height: 6px;
+    background: var(--green-lighter);
+    border-radius: 100px;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  .progress-fill {
+    height: 100%;
+    background: var(--green);
+    width: 0%;
+    transition: width 0.2s ease;
+    border-radius: 100px;
+  }
+
+  /* ── LOG ── */
+  .log {
+    background: var(--dark);
+    color: #d6e3dd;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.7;
+    border-radius: 10px;
+    padding: 16px 18px;
+    max-height: 320px;
+    overflow-y: auto;
+  }
+  .log-line { padding: 1px 0; }
+  .log-line.log-info  { color: #d6e3dd; }
+  .log-line.log-good  { color: #5fd4a3; }
+  .log-line.log-warn  { color: #f5d08a; }
+  .log-line.log-error { color: #e8a4a4; }
+  .log-line.log-page  { color: #9ec5b8; }
+  .log-line .ts { color: #6a7a8a; margin-right: 8px; }
+
+  /* ── PLACEHOLDERS ── */
+  .placeholder {
+    text-align: center;
+    padding: 60px 24px;
+    color: var(--text-muted);
+  }
+  .placeholder-icon {
+    font-size: 36px;
+    margin-bottom: 12px;
+    opacity: 0.5;
+  }
+  .placeholder h3 {
+    font-family: 'Poppins', sans-serif;
+    font-weight: 600;
+    color: var(--dark);
+    font-size: 16px;
+    margin-bottom: 6px;
+  }
+  .placeholder p { font-size: 13px; max-width: 440px; margin: 0 auto; }
+
+  .hidden { display: none !important; }
+
+  /* ── ALERT ── */
+  .alert {
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    margin-bottom: 16px;
+    border: 1px solid transparent;
+  }
+  .alert.error  { background: var(--red-bg); color: var(--red); border-color: #e8b4b4; }
+  .alert.warn   { background: var(--amber-bg); color: var(--amber); border-color: #f5d08a; }
+  .alert.success{ background: var(--green-light); color: var(--green-mid); border-color: var(--border-strong); }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-title">MMW <span>Site Intelligence</span></div>
+  <div class="nav-badge">Phase 1 — Crawl</div>
+</nav>
+
+<main>
+  <div class="header">
+    <h1>Site Intelligence</h1>
+    <p>Unified crawl service powering Audit, Scout, and Brand Voice. One crawl, three analyzers — no duplicate work.</p>
+  </div>
+
+  <div class="tabs" role="tablist">
+    <button class="tab active" data-tab="crawl" onclick="switchTab('crawl', this)">Crawl</button>
+    <button class="tab" data-tab="audit"  disabled title="Coming in phase 2">Audit <span class="tab-badge">Soon</span></button>
+    <button class="tab" data-tab="scout"  disabled title="Coming in phase 3">Scout <span class="tab-badge">Soon</span></button>
+    <button class="tab" data-tab="voice"  disabled title="Coming in phase 4">Brand Voice <span class="tab-badge">Soon</span></button>
+  </div>
+
+  <!-- ─── CRAWL TAB ─────────────────────────────────────────────────────── -->
+  <section class="tab-panel active" id="panel-crawl">
+
+    <div class="card" id="crawl-form">
+      <div class="card-title">Start a crawl</div>
+      <div class="card-sub">Enter a client URL. The crawler will discover the sitemap (XML or HTML fallback), fetch each page, and persist content for downstream analyzers.</div>
+
+      <div class="form-grid">
+        <div class="field" style="grid-column: span 2;">
+          <label for="targetURL">Target URL</label>
+          <input type="text" id="targetURL" placeholder="https://www.client-site.com" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="clientName">Client name (optional)</label>
+          <input type="text" id="clientName" placeholder="Example Med Spa" autocomplete="off">
+        </div>
+      </div>
+
+      <div class="form-grid">
+        <div class="field">
+          <label for="maxPages">Max pages</label>
+          <input type="number" id="maxPages" value="500" min="10" max="2000">
+        </div>
+        <div class="field">
+          <label for="delay">Delay (ms)</label>
+          <input type="number" id="delay" value="300" min="0" max="5000">
+        </div>
+        <div class="field">
+          <label for="concurrency">Concurrency</label>
+          <input type="number" id="concurrency" value="2" min="1" max="5">
+        </div>
+        <div class="field">
+          <label for="htmlSitemap">HTML sitemap (optional)</label>
+          <input type="text" id="htmlSitemap" placeholder="https://.../sitemap" autocomplete="off">
+        </div>
+      </div>
+
+      <div class="checkbox-row">
+        <label><input type="checkbox" id="noSitemap"> Skip sitemap discovery (link-crawl only)</label>
+      </div>
+
+      <div class="btn-row">
+        <button class="primary" id="startBtn" onclick="startCrawl()">Start Crawl</button>
+      </div>
+    </div>
+
+    <!-- Progress card (hidden until crawl starts) -->
+    <div class="card hidden" id="crawl-progress">
+      <div class="card-title">Crawl in progress</div>
+      <div class="card-sub" id="progress-target"></div>
+
+      <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+
+      <div class="stats-grid">
+        <div class="stat"><div class="stat-label">Crawled</div><div class="stat-value green" id="stat-crawled">0</div></div>
+        <div class="stat"><div class="stat-label">Queued</div><div class="stat-value" id="stat-queued">0</div></div>
+        <div class="stat"><div class="stat-label">Errors</div><div class="stat-value red" id="stat-errors">0</div></div>
+        <div class="stat"><div class="stat-label">Sitemap seeds</div><div class="stat-value" id="stat-seeds">0</div></div>
+      </div>
+
+      <div class="btn-row" style="margin-bottom: 18px;">
+        <button class="danger" id="cancelBtn" onclick="cancelCrawl()">Cancel</button>
+      </div>
+
+      <div class="log" id="log"></div>
+    </div>
+
+    <!-- Done card -->
+    <div class="card hidden" id="crawl-done">
+      <div class="card-title">Crawl complete</div>
+      <div class="card-sub" id="done-summary"></div>
+      <div class="stats-grid">
+        <div class="stat"><div class="stat-label">Total pages</div><div class="stat-value" id="done-total">0</div></div>
+        <div class="stat"><div class="stat-label">OK (2xx)</div><div class="stat-value green" id="done-ok">0</div></div>
+        <div class="stat"><div class="stat-label">Errors (4xx/5xx)</div><div class="stat-value red" id="done-errors">0</div></div>
+        <div class="stat"><div class="stat-label">Avg word count</div><div class="stat-value" id="done-avg">0</div></div>
+      </div>
+      <div class="alert success">Crawl saved. Audit, Scout, and Brand Voice tabs will read from this in upcoming phases.</div>
+      <div class="btn-row">
+        <button class="secondary" onclick="resetCrawl()">Run another crawl</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── AUDIT / SCOUT / VOICE PLACEHOLDERS ───────────────────────────── -->
+  <section class="tab-panel" id="panel-audit">
+    <div class="card placeholder">
+      <div class="placeholder-icon">⚙</div>
+      <h3>Audit — coming in phase 2</h3>
+      <p>SEO audit, content thinness, cannibalization checks, and CSV export. Will read from the latest crawl per client.</p>
+    </div>
+  </section>
+  <section class="tab-panel" id="panel-scout">
+    <div class="card placeholder">
+      <div class="placeholder-icon">⚙</div>
+      <h3>Scout — coming in phase 3</h3>
+      <p>Generate Markdown content blocks for AI context — same output as the standalone Scout tool, but using the shared crawl instead of a separate fetch.</p>
+    </div>
+  </section>
+  <section class="tab-panel" id="panel-voice">
+    <div class="card placeholder">
+      <div class="placeholder-icon">⚙</div>
+      <h3>Brand Voice — coming in phase 4</h3>
+      <p>Analyze approved client content, generate a reusable Brand Voice profile, and expose it via API for Content Engine, Press Release Writer, and the future Blog Writer.</p>
+    </div>
+  </section>
+
+</main>
+
+<script>
+  // ─── State ─────────────────────────────────────────────────────────────
+  let activeCrawlId = null;
+  let activeES      = null;
+  let stats = { crawled: 0, queued: 0, errors: 0, seeds: 0 };
+
+  // ─── Tab switching ─────────────────────────────────────────────────────
+  function switchTab(name, btn) {
+    if (btn.disabled) return;
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('panel-' + name).classList.add('active');
+  }
+
+  // ─── Crawl flow ────────────────────────────────────────────────────────
+  async function startCrawl() {
+    const targetURL  = document.getElementById('targetURL').value.trim();
+    const clientName = document.getElementById('clientName').value.trim();
+    const maxPages   = document.getElementById('maxPages').value;
+    const delay      = document.getElementById('delay').value;
+    const concurrency= document.getElementById('concurrency').value;
+    const htmlSitemap= document.getElementById('htmlSitemap').value.trim();
+    const noSitemap  = document.getElementById('noSitemap').checked;
+
+    if (!targetURL || !/^https?:\/\//i.test(targetURL)) {
+      alert('Please enter a valid URL starting with http:// or https://');
+      return;
+    }
+
+    document.getElementById('startBtn').disabled = true;
+    document.getElementById('crawl-form').classList.add('hidden');
+    document.getElementById('crawl-progress').classList.remove('hidden');
+    document.getElementById('crawl-done').classList.add('hidden');
+    document.getElementById('progress-target').textContent = targetURL;
+    document.getElementById('log').innerHTML = '';
+    resetStats();
+
+    let res;
+    try {
+      res = await fetch('/api/crawl', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetURL, clientName, maxPages, delay, concurrency, htmlSitemap, noSitemap }),
+      });
+    } catch (e) {
+      logLine('Network error: ' + e.message, 'error');
+      return;
+    }
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Unknown error' }));
+      logLine('Failed to start crawl: ' + (err.error || res.statusText), 'error');
+      return;
+    }
+
+    const { crawlId } = await res.json();
+    activeCrawlId = crawlId;
+    logLine(`Crawl started — id ${crawlId}`, 'info');
+
+    subscribeToProgress(crawlId);
+  }
+
+  function subscribeToProgress(crawlId) {
+    if (activeES) activeES.close();
+    const es = new EventSource(`/api/crawl/${crawlId}/progress`);
+    activeES = es;
+
+    es.onmessage = (ev) => {
+      let payload;
+      try { payload = JSON.parse(ev.data); } catch { return; }
+      handleEvent(payload);
+    };
+
+    es.onerror = () => {
+      // EventSource will auto-reconnect. If the server has closed the stream
+      // cleanly (job finished), .readyState becomes CLOSED.
+      if (es.readyState === EventSource.CLOSED) {
+        es.close();
+        activeES = null;
+      }
+    };
+  }
+
+  function handleEvent(p) {
+    switch (p.type) {
+      case 'log':
+        logLine(p.message, 'info');
+        break;
+      case 'progress':
+        stats.crawled = p.crawled;
+        stats.queued  = p.queued;
+        renderStats();
+        const pct = p.total ? Math.min(100, Math.round((p.crawled / p.total) * 100)) : 0;
+        document.getElementById('progress-fill').style.width = pct + '%';
+        break;
+      case 'page':
+        const status = p.status >= 200 && p.status < 300 ? 'page' : 'warn';
+        logLine(`[${p.status || '—'}] ${p.url}${p.title ? ' — ' + truncate(p.title, 60) : ''}`, status);
+        if (p.status >= 400 || p.status === 0) stats.errors++;
+        renderStats();
+        break;
+      case 'summary':
+        stats.seeds = p.sitemap_seeds || 0;
+        renderStats();
+        break;
+      case 'cancelled':
+        logLine('Crawl cancelled', 'warn');
+        break;
+      case 'error':
+        logLine('Error: ' + p.message, 'error');
+        break;
+      case 'done':
+        finishCrawl(p);
+        break;
+    }
+  }
+
+  function finishCrawl(summary) {
+    if (activeES) { activeES.close(); activeES = null; }
+    document.getElementById('crawl-progress').classList.add('hidden');
+    document.getElementById('crawl-done').classList.remove('hidden');
+    document.getElementById('done-summary').textContent =
+      summary.cancelled ? 'Cancelled before completion.' : 'Indexed and saved to Supabase.';
+    document.getElementById('done-total').textContent  = summary.total_pages || 0;
+    document.getElementById('done-ok').textContent     = summary.ok_pages || 0;
+    document.getElementById('done-errors').textContent = summary.error_pages || 0;
+    document.getElementById('done-avg').textContent    = summary.avg_word_count || 0;
+  }
+
+  async function cancelCrawl() {
+    if (!activeCrawlId) return;
+    document.getElementById('cancelBtn').disabled = true;
+    try {
+      await fetch(`/api/crawl/${activeCrawlId}/cancel`, { method: 'POST' });
+    } catch (e) {
+      logLine('Cancel failed: ' + e.message, 'error');
+    }
+  }
+
+  function resetCrawl() {
+    activeCrawlId = null;
+    document.getElementById('crawl-form').classList.remove('hidden');
+    document.getElementById('crawl-progress').classList.add('hidden');
+    document.getElementById('crawl-done').classList.add('hidden');
+    document.getElementById('startBtn').disabled = false;
+    document.getElementById('cancelBtn').disabled = false;
+  }
+
+  function resetStats() {
+    stats = { crawled: 0, queued: 0, errors: 0, seeds: 0 };
+    renderStats();
+    document.getElementById('progress-fill').style.width = '0%';
+  }
+
+  function renderStats() {
+    document.getElementById('stat-crawled').textContent = stats.crawled;
+    document.getElementById('stat-queued').textContent  = stats.queued;
+    document.getElementById('stat-errors').textContent  = stats.errors;
+    document.getElementById('stat-seeds').textContent   = stats.seeds;
+  }
+
+  function logLine(message, kind) {
+    kind = kind || 'info';
+    const div = document.createElement('div');
+    div.className = 'log-line log-' + kind;
+    const ts = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    div.innerHTML = `<span class="ts">${ts}</span>${escapeHTML(message)}`;
+    const log = document.getElementById('log');
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function truncate(s, n) {
+    s = String(s || '');
+    return s.length > n ? s.slice(0, n - 1) + '…' : s;
+  }
+  function escapeHTML(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+</script>
+
+</body>
+</html>

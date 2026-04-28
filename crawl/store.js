@@ -1,0 +1,266 @@
+/**
+ * MMW Site Intelligence — Supabase Store
+ *
+ * All database access lives here. Server.js and crawl/engine.js call into
+ * these functions and never touch Supabase directly. This keeps SQL in one
+ * place and makes the storage layer swappable later if needed.
+ *
+ * Lifecycle of a crawl:
+ *   1. upsertClient(domain, name)         → returns client_id
+ *   2. createCrawl(client_id, url, opts)  → returns crawl_id, status='running'
+ *   3. persistPage(crawl_id, page) × N    → called by engine per fetched URL
+ *   4. finalizeCrawl(crawl_id, summary)   → updates status='done', sets is_latest=true,
+ *                                            applies inlink counts, deletes old pages
+ *   5. failCrawl(crawl_id, error_message) → updates status='error'
+ */
+
+'use strict';
+
+const { createClient } = require('@supabase/supabase-js');
+
+let supabase = null;
+
+function getClient() {
+  if (supabase) return supabase;
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) {
+    throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in environment');
+  }
+  supabase = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  return supabase;
+}
+
+// ─── Domain helpers ──────────────────────────────────────────────────────────
+
+function normalizeDomain(input) {
+  // Accept full URL or bare domain. Return 'example.com' (no protocol, no www, no path).
+  let s = String(input || '').trim().toLowerCase();
+  s = s.replace(/^https?:\/\//, '');
+  s = s.replace(/^www\./, '');
+  s = s.replace(/\/.*$/, '');
+  return s;
+}
+
+// ─── Clients ─────────────────────────────────────────────────────────────────
+
+async function upsertClient(targetUrl, friendlyName) {
+  const sb = getClient();
+  const domain = normalizeDomain(targetUrl);
+  if (!domain) throw new Error('Could not derive domain from: ' + targetUrl);
+
+  // Try to fetch existing
+  const { data: existing, error: selErr } = await sb
+    .from('clients')
+    .select('id, name')
+    .eq('domain', domain)
+    .maybeSingle();
+  if (selErr) throw selErr;
+
+  if (existing) {
+    // Optionally update name if user provided a new one
+    if (friendlyName && friendlyName !== existing.name) {
+      await sb.from('clients').update({ name: friendlyName }).eq('id', existing.id);
+    }
+    return existing.id;
+  }
+
+  // Insert new
+  const { data: created, error: insErr } = await sb
+    .from('clients')
+    .insert({ domain, name: friendlyName || domain })
+    .select('id')
+    .single();
+  if (insErr) throw insErr;
+  return created.id;
+}
+
+// ─── Crawls ──────────────────────────────────────────────────────────────────
+
+async function createCrawl(clientId, targetUrl, settings) {
+  const sb = getClient();
+  const { data, error } = await sb
+    .from('crawls')
+    .insert({
+      client_id:  clientId,
+      target_url: targetUrl,
+      status:     'running',
+      settings:   settings || {},
+    })
+    .select('id')
+    .single();
+  if (error) throw error;
+  return data.id;
+}
+
+async function persistPage(crawlId, page) {
+  const sb = getClient();
+  const { error } = await sb.from('crawl_pages').insert({
+    crawl_id:           crawlId,
+    url:                page.url,
+    status_code:        page.status_code,
+    redirect_to:        page.redirect_to,
+    title:              page.title,
+    title_length:       page.title_length,
+    h1:                 page.h1,
+    h2_count:           page.h2_count,
+    h2_sample:          page.h2_sample,
+    meta_description:   page.meta_description,
+    meta_desc_present:  page.meta_desc_present,
+    word_count:         page.word_count,
+    inlinks:            page.inlinks || 0,
+    indexability:       page.indexability,
+    canonical_url:      page.canonical_url,
+    canonical_match:    page.canonical_match,
+    has_cta:            page.has_cta,
+    headings:           page.headings,
+    extracted_body:     page.extracted_body,
+    extracted_text:     page.extracted_text,
+  });
+  if (error) throw error;
+}
+
+/**
+ * After the crawl loop completes, apply the final inlink counts and
+ * mark this crawl as the latest for its client. The latest-crawl trigger
+ * in Postgres handles unflagging the previous one. We then delete the
+ * previous crawl's page rows to keep storage bounded.
+ */
+async function finalizeCrawl(crawlId, summary) {
+  const sb = getClient();
+
+  // 1. Apply inlink counts in bulk. We batch UPDATEs because a single
+  //    UPDATE WHERE url IN (...) can't set different values per row.
+  //    For typical sites (<500 pages), this is one round-trip per page —
+  //    not great but acceptable. If this becomes a bottleneck, we can
+  //    switch to a temp table + JOIN UPDATE pattern.
+  const inlinkEntries = Object.entries(summary.inlinks || {});
+  if (inlinkEntries.length > 0) {
+    // Fetch all pages for this crawl so we can match URL variants (trailing slash)
+    const { data: pages, error: pagesErr } = await sb
+      .from('crawl_pages')
+      .select('id, url')
+      .eq('crawl_id', crawlId);
+    if (pagesErr) throw pagesErr;
+
+    const inlinkMap = summary.inlinks;
+    const updates = pages.map(p => {
+      const a = p.url;
+      const b = a.endsWith('/') ? a.slice(0, -1) : a + '/';
+      const count = Math.max(inlinkMap[a] || 0, inlinkMap[b] || 0);
+      return { id: p.id, inlinks: count };
+    }).filter(u => u.inlinks > 0);
+
+    // Batch update in chunks of 50
+    for (let i = 0; i < updates.length; i += 50) {
+      const chunk = updates.slice(i, i + 50);
+      await Promise.all(chunk.map(u =>
+        sb.from('crawl_pages').update({ inlinks: u.inlinks }).eq('id', u.id)
+      ));
+    }
+  }
+
+  // 2. Mark crawl as done + latest. The trigger in 001_initial_schema.sql
+  //    will unflag the previous latest crawl for this client.
+  const { data: crawl, error: crawlErr } = await sb
+    .from('crawls')
+    .update({
+      status:         'done',
+      is_latest:      true,
+      page_count:     summary.total_pages,
+      error_count:    summary.error_pages,
+      sitemap_seeds:  summary.sitemap_seeds,
+      avg_word_count: summary.avg_word_count,
+      finished_at:    new Date().toISOString(),
+    })
+    .eq('id', crawlId)
+    .select('client_id')
+    .single();
+  if (crawlErr) throw crawlErr;
+
+  // 3. Delete page rows from any older crawl for this client (storage hygiene).
+  //    We keep the crawl row itself for history, just delete its pages.
+  const { data: oldCrawls, error: oldErr } = await sb
+    .from('crawls')
+    .select('id')
+    .eq('client_id', crawl.client_id)
+    .neq('id', crawlId);
+  if (oldErr) throw oldErr;
+
+  if (oldCrawls && oldCrawls.length > 0) {
+    const oldIds = oldCrawls.map(c => c.id);
+    await sb.from('crawl_pages').delete().in('crawl_id', oldIds);
+  }
+}
+
+async function failCrawl(crawlId, errorMessage) {
+  const sb = getClient();
+  await sb
+    .from('crawls')
+    .update({
+      status:        'error',
+      error_message: errorMessage,
+      finished_at:   new Date().toISOString(),
+    })
+    .eq('id', crawlId);
+}
+
+async function cancelCrawl(crawlId) {
+  const sb = getClient();
+  await sb
+    .from('crawls')
+    .update({
+      status:      'cancelled',
+      finished_at: new Date().toISOString(),
+    })
+    .eq('id', crawlId);
+}
+
+// ─── Read APIs (used by analyzer tabs in later phases) ───────────────────────
+
+async function getCrawl(crawlId) {
+  const sb = getClient();
+  const { data, error } = await sb.from('crawls').select('*').eq('id', crawlId).maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+async function getLatestCrawlForDomain(domain) {
+  const sb = getClient();
+  const norm = normalizeDomain(domain);
+  const { data, error } = await sb
+    .from('crawls')
+    .select('*, clients!inner(domain, name)')
+    .eq('clients.domain', norm)
+    .eq('is_latest', true)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+async function getCrawlPages(crawlId) {
+  const sb = getClient();
+  const { data, error } = await sb
+    .from('crawl_pages')
+    .select('*')
+    .eq('crawl_id', crawlId)
+    .order('url');
+  if (error) throw error;
+  return data || [];
+}
+
+module.exports = {
+  getClient,
+  normalizeDomain,
+  upsertClient,
+  createCrawl,
+  persistPage,
+  finalizeCrawl,
+  failCrawl,
+  cancelCrawl,
+  getCrawl,
+  getLatestCrawlForDomain,
+  getCrawlPages,
+};
