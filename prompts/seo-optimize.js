@@ -57,16 +57,57 @@ Healthcare-specific guidance:
 - Comply with standard healthcare advertising norms: do not promise specific results.`;
 
 /**
+ * Convert snake_case practice_type to a human-readable label.
+ */
+function humanizePracticeType(type) {
+  if (!type) return '';
+  const map = {
+    med_spa:          'Medical Spa',
+    medical_spa:      'Medical Spa',
+    plastic_surgery:  'Plastic Surgery',
+    dermatology:      'Dermatology',
+    dental:           'Dental',
+    dentistry:        'Dentistry',
+    orthodontics:     'Orthodontics',
+    cosmetic_surgery: 'Cosmetic Surgery',
+    aesthetics:       'Aesthetics Practice',
+    wellness:         'Wellness Center',
+    obgyn:            'OB/GYN',
+    ophthalmology:    'Ophthalmology',
+    hair_restoration: 'Hair Restoration',
+    weight_loss:      'Weight Loss Center',
+  };
+  return map[type.toLowerCase()] || type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+/**
  * Build the user-turn messages for a batch of pages.
  *
  * @param {Array} pages — each has { url, title, meta_description, extracted_body }
  * @param {string|null} brandVoiceSummary — from brand_voices.profile.summary_paragraph if available
+ * @param {Object|null} clientProfile — optional { city, state, practice_type }
  * @returns {Array} messages array for the Claude API
  */
-function buildSeoUserMessage(pages, brandVoiceSummary) {
+function buildSeoUserMessage(pages, brandVoiceSummary, clientProfile) {
   const voiceNote = brandVoiceSummary
     ? `\n\nBrand voice guidance for this client:\n${brandVoiceSummary}\n`
     : '';
+
+  let locationNote = '';
+  if (clientProfile) {
+    const city  = clientProfile.city  || '';
+    const state = clientProfile.state || '';
+    const loc   = [city, state].filter(Boolean).join(', ');
+    if (loc) {
+      locationNote = `\n\nClient location: ${loc}\nAll service, treatment, and location page titles and metas MUST include this city/state — this is a firm requirement for local SEO.\n`;
+    }
+  }
+
+  let practiceNote = '';
+  if (clientProfile && clientProfile.practice_type) {
+    const label = humanizePracticeType(clientProfile.practice_type);
+    if (label) practiceNote = `\n\nPractice type: ${label}\n`;
+  }
 
   const blocks = pages.map((p, i) => {
     const currentTitle = p.title || '(none)';
@@ -85,7 +126,7 @@ function buildSeoUserMessage(pages, brandVoiceSummary) {
   return [
     {
       type: 'text',
-      text: `Optimize the SEO title and meta description for each page below.${voiceNote}\n\n${blocks}`,
+      text: `Optimize the SEO title and meta description for each page below.${locationNote}${practiceNote}${voiceNote}\n\n${blocks}`,
     },
   ];
 }

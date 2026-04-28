@@ -58,9 +58,24 @@ Schema priority by page type:
  * @param {Array} pages — each has { url, title, h1, page_type, extracted_body,
  *                        extracted_text (truncated), existing_schema_types: [] }
  * @param {string} clientName — practice name for use in schemas
+ * @param {Object|null} clientProfile — optional { city, state, practice_type }
  * @returns {Array} messages array for the Claude API
  */
-function buildSchemaUserMessage(pages, clientName) {
+function buildSchemaUserMessage(pages, clientName, clientProfile) {
+  let contextNote = '';
+  if (clientProfile) {
+    const city  = clientProfile.city  || '';
+    const state = clientProfile.state || '';
+    const loc   = [city, state].filter(Boolean).join(', ');
+    if (loc) contextNote += `Client location: ${loc}\n`;
+    if (clientProfile.practice_type) {
+      const label = clientProfile.practice_type
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, c => c.toUpperCase());
+      contextNote += `Practice type: ${label}\n`;
+    }
+  }
+
   const blocks = pages.map((p, i) => {
     const existing = (p.existing_schema_types || []).length > 0
       ? p.existing_schema_types.join(', ')
@@ -82,7 +97,7 @@ function buildSchemaUserMessage(pages, clientName) {
   return [
     {
       type: 'text',
-      text: `Practice name: ${clientName || 'the practice'}\n\nAnalyze each page and generate appropriate JSON-LD schema for any gaps.\n\n${blocks}`,
+      text: `Practice name: ${clientName || 'the practice'}\n${contextNote}\nAnalyze each page and generate appropriate JSON-LD schema for any gaps.\n\n${blocks}`,
     },
   ];
 }

@@ -577,6 +577,32 @@
     cursor: pointer;
   }
 
+  /* ─── Clients tab ───────────────────────────────────────────────────────── */
+  .clients-table { width:100%; border-collapse:collapse; font-size:13px; font-family:'Barlow',sans-serif; }
+  .clients-table thead th { background:var(--green-lighter); color:var(--text-secondary); font-size:10.5px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; padding:8px 12px; text-align:left; border-bottom:1px solid var(--border); white-space:nowrap; }
+  .clients-table tbody td { padding:10px 12px; border-bottom:1px solid var(--border); vertical-align:middle; }
+  .clients-table tbody tr:last-child td { border-bottom:none; }
+  .clients-table tbody tr { cursor:pointer; transition:background 0.1s; }
+  .clients-table tbody tr:hover { background:var(--green-lighter); }
+  .clients-table tbody tr.selected { background:var(--green-lighter); }
+  .client-domain { font-family:var(--mono); font-size:11px; color:var(--text-muted); }
+  .client-name   { font-weight:600; color:var(--dark); }
+
+  .ce-section-label { font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--text-muted); font-family:'Barlow',sans-serif; margin-bottom:10px; }
+  .ce-divider        { border:none; border-top:1px solid var(--border); margin:20px 0; }
+
+  .danger-zone { background:#fdf0f0; border:1px solid #f5c2c2; border-radius:8px; padding:16px; }
+  .danger-zone-title { font-size:13px; font-weight:700; color:var(--red); font-family:'Barlow',sans-serif; margin-bottom:6px; }
+  .danger-zone p { font-size:12px; color:var(--red); font-family:'Barlow',sans-serif; margin-bottom:10px; line-height:1.5; }
+
+  .report-preview { border:1px solid var(--border); border-radius:8px; padding:16px 20px; font-size:13px; font-family:'Barlow',sans-serif; max-height:440px; overflow-y:auto; line-height:1.75; white-space:pre-wrap; background:var(--bg); }
+
+  .history-pill { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-family:'Barlow',sans-serif; font-weight:600; padding:3px 9px; border-radius:20px; background:var(--green-lighter); color:var(--green-mid); margin-right:6px; }
+
+  /* compact WP status in Optimize tab */
+  .wp-status-bar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .wp-status-bar .opt-connection-status { margin:0; }
+
   /* ─── Optimize tab ───────────────────────────────────────────────────────── */
   .opt-sub-nav {
     display: flex;
@@ -688,12 +714,162 @@
   </div>
 
   <div class="tabs" role="tablist">
+    <button class="tab" data-tab="clients"  onclick="switchTab('clients', this)">Clients</button>
     <button class="tab active" data-tab="crawl" onclick="switchTab('crawl', this)">Crawl</button>
     <button class="tab" data-tab="audit"  onclick="switchTab('audit', this)">Audit</button>
     <button class="tab" data-tab="scout"  onclick="switchTab('scout', this)">Scout</button>
     <button class="tab" data-tab="voice"    onclick="switchTab('voice', this)">Brand Voice</button>
     <button class="tab" data-tab="optimize" onclick="switchTab('optimize', this)">Optimize</button>
   </div>
+
+  <!-- ─── CLIENTS TAB ────────────────────────────────────────────────────── -->
+  <section class="tab-panel" id="panel-clients">
+
+    <div class="card audit-empty hidden" id="clients-empty">
+      <h3>No clients yet</h3>
+      <p>Clients are created automatically when you start your first crawl. Once a crawl completes, the client will appear here.</p>
+    </div>
+    <div class="card audit-empty hidden" id="clients-loading"><h3>Loading&hellip;</h3></div>
+
+    <div id="clients-main" class="hidden">
+
+      <!-- Client list -->
+      <div class="card" id="clients-list-card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+          <div class="card-title" style="margin-bottom:0;">All Clients</div>
+          <div id="clients-count" style="font-size:12px;color:var(--text-muted);font-family:Barlow,sans-serif;"></div>
+        </div>
+        <div class="audit-table-wrap">
+          <table class="clients-table">
+            <thead><tr>
+              <th>Client</th><th>Domain</th><th>Location</th><th>Practice Type</th><th>Last Crawl</th><th class="num">Pages</th>
+            </tr></thead>
+            <tbody id="clients-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Edit panel -->
+      <div class="card hidden" id="client-edit-panel">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:20px;">
+          <div>
+            <div class="card-title" style="margin-bottom:2px;" id="ce-title">—</div>
+            <div class="client-domain" id="ce-domain">—</div>
+          </div>
+          <button class="secondary" onclick="closeClientEdit()" style="font-size:12px;padding:7px 14px;">Close</button>
+        </div>
+
+        <!-- ── Profile ── -->
+        <div class="ce-section-label">Profile</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;" class="opt-creds-grid">
+          <div>
+            <label class="voice-label">Practice Name</label>
+            <input type="text" id="ce-name" class="voice-textarea" style="height:auto;padding:8px 12px;resize:none;">
+          </div>
+          <div>
+            <label class="voice-label">City</label>
+            <input type="text" id="ce-city" placeholder="Austin" class="voice-textarea" style="height:auto;padding:8px 12px;resize:none;">
+          </div>
+          <div>
+            <label class="voice-label">State</label>
+            <input type="text" id="ce-state" placeholder="TX" maxlength="2" class="voice-textarea" style="height:auto;padding:8px 12px;resize:none;">
+          </div>
+          <div>
+            <label class="voice-label">Practice Type</label>
+            <select id="ce-practice-type" class="crawl-select" style="width:100%;height:38px;">
+              <option value="">— select —</option>
+              <option value="med_spa">Medical Spa</option>
+              <option value="dermatology">Dermatology</option>
+              <option value="plastic_surgery">Plastic Surgery</option>
+              <option value="dental">Dental</option>
+              <option value="chiropractic">Chiropractic</option>
+              <option value="optometry">Optometry</option>
+              <option value="physical_therapy">Physical Therapy</option>
+              <option value="pain_management">Pain Management</option>
+              <option value="other">Other Healthcare</option>
+            </select>
+          </div>
+          <div style="grid-column:span 2;">
+            <label class="voice-label">Tagline (optional)</label>
+            <input type="text" id="ce-tagline" placeholder="Where science meets beauty" class="voice-textarea" style="height:auto;padding:8px 12px;resize:none;">
+          </div>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-family:Barlow,sans-serif;font-weight:500;cursor:pointer;margin-top:12px;">
+          <input type="checkbox" id="ce-built-by-mmw" style="accent-color:var(--green);width:15px;height:15px;">
+          Site built by MMW &mdash; shifts report framing from "audit findings" to "ongoing optimization work"
+        </label>
+        <div style="margin-top:14px;display:flex;align-items:center;gap:10px;">
+          <button class="primary" onclick="saveClientProfile()" style="font-size:12px;padding:7px 14px;">Save profile</button>
+          <span id="ce-save-status" style="font-size:12px;font-family:Barlow,sans-serif;"></span>
+        </div>
+
+        <hr class="ce-divider">
+
+        <!-- ── WordPress Connection ── -->
+        <div class="ce-section-label">WordPress Connection</div>
+        <p style="font-size:12px;color:var(--text-muted);font-family:Barlow,sans-serif;margin-bottom:12px;">
+          Generate an application password at WP Admin &rarr; Users &rarr; Profile &rarr; Application Passwords.
+          Install the MMW plugin via WP Admin &rarr; Plugins &rarr; Add New &rarr; Upload Plugin.
+        </p>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;" class="opt-creds-grid">
+          <div>
+            <label class="voice-label">WordPress URL</label>
+            <input type="url" id="ce-wp-url" placeholder="https://clientsite.com" class="voice-textarea" style="height:auto;padding:8px 12px;resize:none;">
+          </div>
+          <div>
+            <label class="voice-label">Username</label>
+            <input type="text" id="ce-wp-username" autocomplete="off" class="voice-textarea" style="height:auto;padding:8px 12px;resize:none;">
+          </div>
+          <div>
+            <label class="voice-label">Application Password</label>
+            <input type="password" id="ce-wp-password" autocomplete="off" class="voice-textarea" style="height:auto;padding:8px 12px;resize:none;">
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;">
+          <button class="secondary" id="ce-test-btn" onclick="testClientWp()" style="font-size:12px;padding:7px 14px;">Test Connection</button>
+          <button class="primary" onclick="saveClientWp()" style="font-size:12px;padding:7px 14px;">Save credentials</button>
+          <a id="ce-plugin-download" href="/api/optimize/plugin/download" download style="font-size:12px;padding:7px 14px;text-decoration:none;border-radius:8px;border:1px solid var(--border-strong);font-family:Barlow,sans-serif;font-weight:600;color:var(--dark-mid);">Download Plugin</a>
+          <span id="ce-wp-status" class="opt-connection-status" style="display:none;"></span>
+        </div>
+
+        <hr class="ce-divider">
+
+        <!-- ── Optimization Report ── -->
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
+          <div>
+            <div class="ce-section-label" style="margin-bottom:4px;">Optimization Report</div>
+            <div id="ce-history-sub" style="font-size:12px;color:var(--text-muted);font-family:Barlow,sans-serif;line-height:1.6;"></div>
+          </div>
+          <button class="primary" id="ce-report-btn" onclick="generateClientReport()" disabled style="font-size:12px;padding:7px 14px;white-space:nowrap;">Generate Report</button>
+        </div>
+        <div id="ce-report-generating" class="hidden" style="margin-bottom:12px;">
+          <div id="ce-report-log" style="font-size:13px;font-family:Barlow,sans-serif;color:var(--text-secondary);line-height:1.8;"></div>
+        </div>
+        <div id="ce-report-output" class="hidden">
+          <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+            <button class="secondary" onclick="downloadReportMd()" style="font-size:12px;padding:7px 14px;">Download .md</button>
+            <button class="secondary" onclick="downloadReportHtml()" style="font-size:12px;padding:7px 14px;">Download .html</button>
+            <button class="secondary" onclick="generateClientReport()" style="font-size:12px;padding:7px 14px;">Regenerate</button>
+          </div>
+          <div id="ce-report-preview" class="report-preview"></div>
+        </div>
+
+        <hr class="ce-divider">
+
+        <!-- ── Danger zone ── -->
+        <div class="danger-zone">
+          <div class="danger-zone-title">Offboard Client</div>
+          <p>Permanently deletes this client and all associated data: crawls, pages, brand voice profile, and optimization history. This cannot be undone.</p>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <button class="secondary" id="ce-offboard-btn" onclick="confirmOffboard()"
+              style="font-size:12px;padding:7px 14px;border-color:#f5c2c2;color:var(--red);">Offboard client</button>
+            <span id="ce-offboard-status" style="font-size:12px;font-family:Barlow,sans-serif;"></span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
 
   <!-- ─── CRAWL TAB ─────────────────────────────────────────────────────── -->
   <section class="tab-panel active" id="panel-crawl">
@@ -996,6 +1172,7 @@
               <div class="card-sub" id="voice-profile-meta"></div>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="secondary" onclick="downloadVoiceMd()" style="font-size:12px;padding:7px 14px;">Download .md</button>
               <button class="secondary" onclick="showVoiceState('picker')" style="font-size:12px;padding:7px 14px;">Regenerate</button>
               <button class="primary" id="voice-save-btn" onclick="saveVoiceProfile()">Save changes</button>
             </div>
@@ -1174,38 +1351,14 @@
         </div>
       </div>
 
-      <!-- WP Connection card -->
-      <div class="card" id="opt-connection-card">
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:12px;">
-          <div>
-            <div class="card-title" style="margin-bottom:2px;">WordPress Connection</div>
-            <div class="card-sub">Required to push SEO changes and schema to the live site.</div>
-          </div>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <span id="opt-conn-status" class="opt-connection-status warning" style="display:none;"></span>
-            <a id="opt-plugin-download" href="/api/optimize/plugin/download" class="secondary" style="font-size:12px;padding:7px 14px;text-decoration:none;border-radius:8px;border:1px solid var(--border-strong);font-family:Barlow,sans-serif;font-weight:600;color:var(--dark-mid);" download>Download Plugin</a>
-            <button class="secondary" id="opt-test-btn" onclick="testWpConnection()" style="font-size:12px;padding:7px 14px;">Test Connection</button>
-            <button class="primary" onclick="saveWpCredentials()" style="font-size:12px;padding:7px 14px;">Save</button>
-          </div>
+      <!-- WP Connection status (compact — credentials managed in Clients tab) -->
+      <div class="card" id="opt-connection-card" style="padding:16px 24px;">
+        <div class="wp-status-bar">
+          <span style="font-size:13px;font-weight:600;font-family:Barlow,sans-serif;color:var(--dark);">WordPress</span>
+          <span id="opt-conn-status" class="opt-connection-status warning">Not configured</span>
+          <button class="secondary" id="opt-test-btn" onclick="testWpConnection()" style="font-size:12px;padding:5px 12px;">Test</button>
+          <button class="secondary" onclick="goToClientSettings()" style="font-size:12px;padding:5px 12px;">Edit credentials &rarr;</button>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;" class="opt-creds-grid">
-          <div>
-            <label class="voice-label">WordPress URL</label>
-            <input type="url" id="opt-wp-url" placeholder="https://clientsite.com" class="voice-textarea" style="height:auto;padding:8px 12px;resize:none;">
-          </div>
-          <div>
-            <label class="voice-label">Username</label>
-            <input type="text" id="opt-wp-username" placeholder="admin" autocomplete="off" class="voice-textarea" style="height:auto;padding:8px 12px;resize:none;">
-          </div>
-          <div>
-            <label class="voice-label">Application Password</label>
-            <input type="password" id="opt-wp-password" placeholder="xxxx xxxx xxxx xxxx" autocomplete="off" class="voice-textarea" style="height:auto;padding:8px 12px;resize:none;">
-          </div>
-        </div>
-        <p style="font-size:11px;color:var(--text-muted);margin-top:8px;font-family:Barlow,sans-serif;">
-          Generate an application password at: WP Admin &rarr; Users &rarr; Profile &rarr; Application Passwords.
-          Install the plugin via WP Admin &rarr; Plugins &rarr; Add New &rarr; Upload Plugin.
-        </p>
       </div>
 
       <!-- Sub-navigation -->
@@ -1265,6 +1418,8 @@
               </div>
               <div style="display:flex;gap:8px;flex-wrap:wrap;">
                 <button class="secondary" onclick="showSeoState('picker')" style="font-size:12px;padding:7px 14px;">Back to picker</button>
+                <button class="secondary" onclick="exportSeoResults()" style="font-size:12px;padding:7px 14px;">Export (internal)</button>
+                <button class="secondary" onclick="exportSeoApproval()" style="font-size:12px;padding:7px 14px;">Export for client</button>
                 <button class="primary" id="seo-push-all-btn" onclick="pushAllSeo()">Push all to WordPress</button>
               </div>
             </div>
@@ -1362,10 +1517,20 @@
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('panel-' + name).classList.add('active');
-    if (name === 'audit') initAuditTab();
-    if (name === 'scout') initScoutTab();
-    if (name === 'voice')    initVoiceTab();
+    if (name === 'clients') initClientsTab();
+    if (name === 'audit')   initAuditTab();
+    if (name === 'scout')   initScoutTab();
+    if (name === 'voice')   initVoiceTab();
     if (name === 'optimize') initOptimizeTab();
+  }
+
+  function goToClientSettings() {
+    const btn = document.querySelector('[data-tab="clients"]');
+    if (btn) switchTab('clients', btn);
+    // After clients load, select the current client
+    if (optState.clientId) {
+      setTimeout(() => selectClient(optState.clientId), 600);
+    }
   }
 
   // ─── Crawl flow ────────────────────────────────────────────────────────
@@ -2544,6 +2709,492 @@
   }
 
   // ═══════════════════════════════════════════════════════════════════════
+  // CLIENTS TAB
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const PRACTICE_TYPE_LABELS = {
+    med_spa: 'Medical Spa', dermatology: 'Dermatology',
+    plastic_surgery: 'Plastic Surgery', dental: 'Dental',
+    chiropractic: 'Chiropractic', optometry: 'Optometry',
+    physical_therapy: 'Physical Therapy', pain_management: 'Pain Management',
+    other: 'Other Healthcare',
+  };
+
+  const clientsState = {
+    initialized: false,
+    clients:     [],
+    selectedId:  null,
+    history:     null,
+    reportMd:    null,
+  };
+
+  async function initClientsTab() {
+    if (clientsState.initialized) return;
+    clientsState.initialized = true;
+    showClientsState('loading');
+    await loadClients();
+  }
+
+  async function loadClients() {
+    showClientsState('loading');
+    try {
+      const res = await fetch('/api/clients');
+      const { clients } = await res.json();
+      clientsState.clients = clients || [];
+      if (clientsState.clients.length === 0) { showClientsState('empty'); return; }
+      renderClientsList();
+      showClientsState('main');
+    } catch (e) {
+      console.error('Clients load failed', e);
+      showClientsState('empty');
+    }
+  }
+
+  function showClientsState(state) {
+    document.getElementById('clients-empty').classList.toggle('hidden',   state !== 'empty');
+    document.getElementById('clients-loading').classList.toggle('hidden', state !== 'loading');
+    document.getElementById('clients-main').classList.toggle('hidden',    state === 'empty' || state === 'loading');
+  }
+
+  function renderClientsList() {
+    const tbody = document.getElementById('clients-tbody');
+    document.getElementById('clients-count').textContent = `${clientsState.clients.length} client${clientsState.clients.length === 1 ? '' : 's'}`;
+    tbody.innerHTML = clientsState.clients.map(c => {
+      const loc      = [c.city, c.state].filter(Boolean).join(', ') || '—';
+      const type     = PRACTICE_TYPE_LABELS[c.practice_type] || c.practice_type || '—';
+      const crawlDate = c.latest_crawl ? (c.latest_crawl.finished_at || '').split('T')[0] : '—';
+      const pages     = c.latest_crawl ? c.latest_crawl.page_count || '—' : '—';
+      const selected  = c.id === clientsState.selectedId ? 'selected' : '';
+      return `<tr class="${selected}" onclick="selectClient('${c.id}')">
+        <td><span class="client-name">${escapeHTML(c.name || c.domain)}</span></td>
+        <td><span class="client-domain">${escapeHTML(c.domain || '')}</span></td>
+        <td>${escapeHTML(loc)}</td>
+        <td>${escapeHTML(type)}</td>
+        <td>${crawlDate}</td>
+        <td class="num">${pages}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  async function selectClient(clientId) {
+    clientsState.selectedId = clientId;
+    clientsState.reportMd   = null;
+    renderClientsList();
+
+    const client = clientsState.clients.find(c => c.id === clientId);
+    if (!client) return;
+
+    // Populate edit panel
+    document.getElementById('ce-title').textContent  = client.name || client.domain;
+    document.getElementById('ce-domain').textContent = client.domain || '';
+    document.getElementById('ce-name').value         = client.name         || '';
+    document.getElementById('ce-city').value         = client.city         || '';
+    document.getElementById('ce-state').value        = client.state        || '';
+    document.getElementById('ce-tagline').value      = client.tagline      || '';
+    document.getElementById('ce-practice-type').value = client.practice_type || '';
+    document.getElementById('ce-built-by-mmw').checked = !!client.built_by_mmw;
+    document.getElementById('ce-wp-url').value       = client.wp_url      || '';
+    document.getElementById('ce-wp-username').value  = client.wp_username  || '';
+    document.getElementById('ce-wp-password').value  = '';
+
+    const wpStatus = document.getElementById('ce-wp-status');
+    if (client.wp_url && client.wp_username && client.wp_app_password !== undefined) {
+      wpStatus.textContent   = 'Credentials saved';
+      wpStatus.className     = 'opt-connection-status';
+      wpStatus.style.display = '';
+    } else {
+      wpStatus.style.display = 'none';
+    }
+
+    document.getElementById('ce-save-status').textContent    = '';
+    document.getElementById('ce-offboard-status').textContent = '';
+    document.getElementById('ce-report-generating').classList.add('hidden');
+    document.getElementById('ce-report-output').classList.add('hidden');
+
+    // Load optimization history
+    document.getElementById('ce-history-sub').textContent = 'Loading history…';
+    document.getElementById('ce-report-btn').disabled = true;
+    try {
+      const hRes = await fetch(`/api/clients/${clientId}/history`);
+      if (hRes.ok) {
+        clientsState.history = await hRes.json();
+        updateHistoryUI();
+      }
+    } catch (_) {}
+
+    document.getElementById('client-edit-panel').classList.remove('hidden');
+    document.getElementById('client-edit-panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function updateHistoryUI() {
+    const h = clientsState.history;
+    if (!h) return;
+    const seoCount    = (h.seo    || []).length;
+    const schemaCount = (h.schema || []).length;
+    const sub = document.getElementById('ce-history-sub');
+    const btn = document.getElementById('ce-report-btn');
+    if (seoCount === 0 && schemaCount === 0) {
+      sub.textContent = 'No optimizations pushed yet. Run the Optimize tab to generate history.';
+      btn.disabled = true;
+    } else {
+      const parts = [];
+      if (seoCount    > 0) parts.push(`${seoCount} SEO update${seoCount === 1 ? '' : 's'}`);
+      if (schemaCount > 0) parts.push(`${schemaCount} schema deployment${schemaCount === 1 ? '' : 's'}`);
+      sub.innerHTML = parts.map(p => `<span class="history-pill">${p}</span>`).join('') +
+        ` across ${new Set([...(h.seo||[]).map(x=>x.url), ...(h.schema||[]).map(x=>x.url)]).size} pages`;
+      btn.disabled = false;
+    }
+  }
+
+  function closeClientEdit() {
+    clientsState.selectedId = null;
+    document.getElementById('client-edit-panel').classList.add('hidden');
+    renderClientsList();
+  }
+
+  async function saveClientProfile() {
+    const id = clientsState.selectedId;
+    if (!id) return;
+    const statusEl = document.getElementById('ce-save-status');
+    statusEl.textContent = 'Saving…'; statusEl.style.color = 'var(--text-muted)';
+    try {
+      const body = {
+        name:          document.getElementById('ce-name').value.trim()         || null,
+        city:          document.getElementById('ce-city').value.trim()         || null,
+        state:         document.getElementById('ce-state').value.trim().toUpperCase() || null,
+        practice_type: document.getElementById('ce-practice-type').value       || null,
+        tagline:       document.getElementById('ce-tagline').value.trim()      || null,
+        built_by_mmw:  document.getElementById('ce-built-by-mmw').checked,
+      };
+      const res = await fetch(`/api/clients/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))).error) || res.statusText);
+      // Update local state
+      const client = clientsState.clients.find(c => c.id === id);
+      if (client) Object.assign(client, body);
+      renderClientsList();
+      document.getElementById('ce-title').textContent = body.name || (client && client.domain) || id;
+      statusEl.textContent = 'Saved'; statusEl.style.color = 'var(--green)';
+    } catch (e) {
+      statusEl.textContent = 'Save failed: ' + e.message; statusEl.style.color = 'var(--red)';
+    }
+  }
+
+  async function saveClientWp() {
+    const id = clientsState.selectedId;
+    if (!id) return;
+    const statusEl = document.getElementById('ce-wp-status');
+    statusEl.textContent = 'Saving…'; statusEl.className = 'opt-connection-status warning'; statusEl.style.display = '';
+    try {
+      const body = {
+        wp_url:      document.getElementById('ce-wp-url').value.trim()      || null,
+        wp_username: document.getElementById('ce-wp-username').value.trim() || null,
+      };
+      const pw = document.getElementById('ce-wp-password').value;
+      if (pw) body.wp_app_password = pw;
+      const res = await fetch(`/api/clients/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))).error) || res.statusText);
+      const client = clientsState.clients.find(c => c.id === id);
+      if (client) { client.wp_url = body.wp_url; client.wp_username = body.wp_username; }
+      document.getElementById('ce-wp-password').value = '';
+      statusEl.textContent = 'Saved'; statusEl.className = 'opt-connection-status';
+    } catch (e) {
+      statusEl.textContent = 'Save failed: ' + e.message; statusEl.className = 'opt-connection-status error';
+    }
+  }
+
+  async function testClientWp() {
+    const id = clientsState.selectedId;
+    if (!id) return;
+    const client = clientsState.clients.find(c => c.id === id);
+    if (!client || !client.wp_url) { alert('Save WordPress credentials first.'); return; }
+    const btn = document.getElementById('ce-test-btn');
+    const statusEl = document.getElementById('ce-wp-status');
+    btn.disabled = true; btn.textContent = 'Testing…';
+    statusEl.textContent = 'Testing…'; statusEl.className = 'opt-connection-status warning'; statusEl.style.display = '';
+    // Use the optimize ping endpoint via a temp crawl lookup — or just hit the clients/:id/ping if we add it.
+    // For now, use the most recent crawl for this client via listFinishedCrawls pattern.
+    // Simplest: find the latest crawl_id for this client from clientsState data.
+    const crawlId = client.latest_crawl && client.latest_crawl.id;
+    if (!crawlId) {
+      statusEl.textContent = 'No crawl found — run a crawl first to test connection.';
+      statusEl.className = 'opt-connection-status warning';
+      btn.disabled = false; btn.textContent = 'Test Connection'; return;
+    }
+    try {
+      const res  = await fetch(`/api/optimize/${crawlId}/ping`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || res.statusText);
+      statusEl.textContent = `Connected · ${data.name || data.site || 'WordPress'} v${data.version || '?'}`;
+      statusEl.className   = 'opt-connection-status';
+    } catch (e) {
+      statusEl.textContent = 'Failed: ' + e.message;
+      statusEl.className   = 'opt-connection-status error';
+    } finally { btn.disabled = false; btn.textContent = 'Test Connection'; }
+  }
+
+  // ─── Report generation ────────────────────────────────────────────────────
+
+  async function generateClientReport() {
+    const id = clientsState.selectedId;
+    if (!id) return;
+
+    const btn = document.getElementById('ce-report-btn');
+    btn.disabled = true; btn.textContent = 'Generating…';
+    document.getElementById('ce-report-generating').classList.remove('hidden');
+    document.getElementById('ce-report-output').classList.add('hidden');
+    clientsState.reportMd = null;
+
+    const logEl = document.getElementById('ce-report-log');
+    logEl.innerHTML = '';
+    const addLog = msg => {
+      const p = document.createElement('p'); p.style.margin = '0'; p.textContent = msg; logEl.appendChild(p);
+    };
+    addLog('Connecting to server…');
+
+    try {
+      const res = await fetch(`/api/clients/${id}/report`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+      if (!res.ok) { const err = await res.json().catch(() => ({ error: res.statusText })); throw new Error(err.error || res.statusText); }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n'); buffer = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          let data; try { data = JSON.parse(line.slice(6)); } catch (_) { continue; }
+          if (data.type === 'log') { addLog(data.message); }
+          else if (data.type === 'done') {
+            clientsState.reportMd = data.report || '';
+            document.getElementById('ce-report-preview').textContent = clientsState.reportMd;
+            document.getElementById('ce-report-generating').classList.add('hidden');
+            document.getElementById('ce-report-output').classList.remove('hidden');
+            btn.disabled = false; btn.textContent = 'Generate Report'; return;
+          } else if (data.type === 'error') { throw new Error(data.message); }
+        }
+      }
+    } catch (e) {
+      addLog('Error: ' + e.message);
+      document.getElementById('ce-report-generating').classList.remove('hidden');
+    } finally { btn.disabled = false; btn.textContent = 'Generate Report'; }
+  }
+
+  function downloadReportMd() {
+    if (!clientsState.reportMd) return;
+    const client = clientsState.clients.find(c => c.id === clientsState.selectedId);
+    const slug   = (client && client.domain || 'report').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+    triggerDownload(`${slug}-optimization-report.md`, clientsState.reportMd, 'text/markdown');
+  }
+
+  function downloadReportHtml() {
+    if (!clientsState.reportMd) return;
+    const client = clientsState.clients.find(c => c.id === clientsState.selectedId);
+    const name   = client && (client.name || client.domain) || 'Client';
+    const slug   = (client && client.domain || 'report').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+    const html   = mdToReportHtml(clientsState.reportMd, name);
+    triggerDownload(`${slug}-optimization-report.html`, html, 'text/html');
+  }
+
+  function mdToReportHtml(md, clientName) {
+    const escaped = md
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+      .replace(/^## (.+)$/gm,  '<h2>$1</h2>')
+      .replace(/^# (.+)$/gm,   '<h1>$1</h1>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g,    '<em>$1</em>')
+      .replace(/^- (.+)$/gm,   '<li>$1</li>')
+      .replace(/(<li>.*<\/li>\n?)+/gs, m => `<ul>${m}</ul>`)
+      .replace(/\n\n/g, '</p><p>')
+      .replace(/^(?!<[hul])/gm, '');
+    const date = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<title>Optimization Report — ${escapeHTML(clientName)}</title>
+<style>
+  body { font-family: Georgia, serif; max-width: 820px; margin: 40px auto; padding: 0 24px; color: #222; line-height: 1.7; }
+  h1 { font-size: 28px; color: #28AB83; border-bottom: 3px solid #28AB83; padding-bottom: 10px; }
+  h2 { font-size: 20px; color: #323547; margin-top: 32px; }
+  h3 { font-size: 16px; color: #4a4e65; }
+  table { width:100%; border-collapse:collapse; font-size:13px; margin:16px 0; }
+  th { background:#E5F5F0; padding:8px 10px; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.05em; }
+  td { padding:8px 10px; border-bottom:1px solid #e0e0e0; vertical-align:top; }
+  .header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:32px; }
+  .header-logo { font-size:13px; color:#888; }
+  .date { font-size:12px; color:#888; margin-bottom:20px; }
+  @media print { body { margin:0; } }
+</style></head><body>
+<div class="header">
+  <div><strong style="font-size:15px;color:#323547;">MMW Site Intelligence</strong><br>
+  <span style="font-size:13px;color:#7a8a9a;">Optimization Report</span></div>
+  <div class="header-logo">${escapeHTML(clientName)}</div>
+</div>
+<div class="date">Generated ${date}</div>
+<p>${escaped}</p>
+</body></html>`;
+  }
+
+  // ─── Offboard client ──────────────────────────────────────────────────────
+
+  async function confirmOffboard() {
+    const id = clientsState.selectedId;
+    if (!id) return;
+    const client = clientsState.clients.find(c => c.id === id);
+    const name   = client && (client.name || client.domain) || 'this client';
+    const statusEl = document.getElementById('ce-offboard-status');
+    const btn      = document.getElementById('ce-offboard-btn');
+
+    if (btn.dataset.confirmed !== 'true') {
+      btn.textContent = 'Click again to confirm';
+      btn.style.background = '#fde8e8';
+      btn.dataset.confirmed = 'true';
+      statusEl.textContent = `This will permanently delete ${name} and all associated data.`;
+      statusEl.style.color = 'var(--red)';
+      setTimeout(() => { btn.textContent = 'Offboard client'; btn.style.background = ''; btn.dataset.confirmed = ''; statusEl.textContent = ''; }, 5000);
+      return;
+    }
+
+    btn.disabled = true; btn.textContent = 'Deleting…';
+    try {
+      const res = await fetch(`/api/clients/${id}`, {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: true }),
+      });
+      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))).error) || res.statusText);
+      clientsState.clients = clientsState.clients.filter(c => c.id !== id);
+      clientsState.selectedId = null;
+      document.getElementById('client-edit-panel').classList.add('hidden');
+      if (clientsState.clients.length === 0) { showClientsState('empty'); }
+      else renderClientsList();
+    } catch (e) {
+      statusEl.textContent = 'Delete failed: ' + e.message; statusEl.style.color = 'var(--red)';
+      btn.disabled = false; btn.textContent = 'Offboard client';
+    }
+  }
+
+  // ─── Brand Voice MD export ────────────────────────────────────────────────
+
+  function downloadVoiceMd() {
+    const p = voiceState;
+    if (!p.crawl) { alert('No profile loaded.'); return; }
+
+    const profile = collectProfile();
+    const dom  = (p.crawl.clients && p.crawl.clients.domain) || 'client';
+    const name = (p.crawl.clients && p.crawl.clients.name)   || dom;
+    const date = new Date().toISOString().split('T')[0];
+    const arr  = v => Array.isArray(v) ? v.map(s => `- ${s}`).join('\n') : (v ? `- ${v}` : '');
+
+    const md = [
+      `# Brand Voice Profile: ${name}`,
+      `Generated: ${date}`,
+      '',
+      '## Voice Summary',
+      profile.summary_paragraph || '',
+      '',
+      '## Tone',
+      arr(profile.tone_descriptors),
+      '',
+      '## Point of View',
+      profile.point_of_view || '',
+      '',
+      '## Vocabulary',
+      '### Use These Terms',
+      arr(profile.vocabulary && profile.vocabulary.preferred_terms),
+      '',
+      '### Avoid These Terms',
+      arr(profile.vocabulary && profile.vocabulary.avoided_terms),
+      '',
+      `### Industry Specificity: ${(profile.vocabulary && profile.vocabulary.industry_specificity) || 'moderate'}`,
+      '',
+      '## Sentence Structure',
+      `- Average length: ${(profile.sentence_structure && profile.sentence_structure.avg_length) || 'medium'}`,
+      `- Rhythm: ${(profile.sentence_structure && profile.sentence_structure.rhythm) || 'varied'}`,
+      `- Uses questions: ${(profile.sentence_structure && profile.sentence_structure.uses_questions) ? 'yes' : 'no'}`,
+      `- Uses lists: ${(profile.sentence_structure && profile.sentence_structure.uses_lists) || 'sparingly'}`,
+      '',
+      '## Do: Examples of on-brand voice',
+      arr(profile.do_examples),
+      '',
+      `## Don't: Examples of off-brand voice`,
+      arr(profile.dont_examples),
+    ].join('\n');
+
+    triggerDownload(`brand-voice-${dom.replace(/[^a-z0-9]/gi, '-')}.md`, md, 'text/markdown');
+  }
+
+  // ─── SEO result exports ────────────────────────────────────────────────────
+
+  async function exportSeoResults() {
+    const proposals = optState.seoProposals;
+    if (proposals.length === 0) return;
+    const crawlId = optState.crawlId;
+    const items = proposals.map((item, i) => ({
+      ...item,
+      current_title: (optState.pages.find(p => p.url === item.url) || {}).title || '',
+      current_meta:  (optState.pages.find(p => p.url === item.url) || {}).meta_description || '',
+      edited_title:  document.getElementById(`seo-title-${i}`)?.value || item.proposed_title || '',
+      edited_meta:   document.getElementById(`seo-meta-${i}`)?.value  || item.proposed_meta  || '',
+    }));
+    try {
+      const res = await fetch(`/api/optimize/${crawlId}/seo/export`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proposals: items }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = res.headers.get('content-disposition')?.match(/filename="([^"]+)"/)?.[1] || 'seo-proposals.html';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    } catch (e) { alert('Export failed: ' + e.message); }
+  }
+
+  async function exportSeoApproval() {
+    const proposals = optState.seoProposals;
+    if (proposals.length === 0) return;
+    const crawlId  = optState.crawlId;
+    const crawl    = optState.crawl;
+    const clientName = (crawl && crawl.clients && (crawl.clients.name || crawl.clients.domain)) || 'Client';
+    const items = proposals.map((item, i) => ({
+      ...item,
+      current_title: (optState.pages.find(p => p.url === item.url) || {}).title || '',
+      current_meta:  (optState.pages.find(p => p.url === item.url) || {}).meta_description || '',
+      edited_title:  document.getElementById(`seo-title-${i}`)?.value || item.proposed_title || '',
+      edited_meta:   document.getElementById(`seo-meta-${i}`)?.value  || item.proposed_meta  || '',
+    }));
+    try {
+      const res = await fetch(`/api/optimize/${crawlId}/seo/approval`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proposals: items, clientName }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = res.headers.get('content-disposition')?.match(/filename="([^"]+)"/)?.[1] || 'seo-approval.html';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    } catch (e) { alert('Export failed: ' + e.message); }
+  }
+
+  // ─── Shared download helper ───────────────────────────────────────────────
+
+  function triggerDownload(filename, content, mimeType) {
+    const blob = new Blob([content], { type: mimeType });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
   // OPTIMIZE TAB
   // ═══════════════════════════════════════════════════════════════════════
 
@@ -2620,17 +3271,15 @@
       if (connRes.ok) {
         const conn = await connRes.json();
         optState.clientId = conn.clientId;
-        document.getElementById('opt-wp-url').value      = conn.wp_url      || '';
-        document.getElementById('opt-wp-username').value = conn.wp_username || '';
-        document.getElementById('opt-wp-password').value = '';
         const statusEl = document.getElementById('opt-conn-status');
         if (conn.hasCredentials) {
-          statusEl.textContent   = 'Credentials saved';
-          statusEl.className     = 'opt-connection-status';
-          statusEl.style.display = '';
+          statusEl.textContent = conn.wp_url ? `Configured · ${conn.wp_url.replace(/^https?:\/\//, '')}` : 'Configured';
+          statusEl.className   = 'opt-connection-status';
         } else {
-          statusEl.style.display = 'none';
+          statusEl.textContent = 'Not configured';
+          statusEl.className   = 'opt-connection-status warning';
         }
+        statusEl.style.display = '';
       }
 
       renderSeoPickerTable();
@@ -2660,66 +3309,23 @@
 
   // ─── WP Credentials ────────────────────────────────────────────────────────
 
-  async function saveWpCredentials() {
-    const crawlId = optState.crawlId;
-    if (!crawlId) return;
-
-    const url      = document.getElementById('opt-wp-url').value.trim();
-    const username = document.getElementById('opt-wp-username').value.trim();
-    const password = document.getElementById('opt-wp-password').value;
-
-    const statusEl = document.getElementById('opt-conn-status');
-    statusEl.textContent   = 'Saving…';
-    statusEl.className     = 'opt-connection-status warning';
-    statusEl.style.display = '';
-
-    try {
-      const body = { wp_url: url || null, wp_username: username || null };
-      if (password) body.wp_app_password = password;
-
-      const res = await fetch(`/api/optimize/${crawlId}/connection`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))).error) || res.statusText);
-
-      statusEl.textContent   = 'Saved';
-      statusEl.className     = 'opt-connection-status';
-      document.getElementById('opt-wp-password').value = '';
-    } catch (e) {
-      statusEl.textContent = 'Save failed: ' + e.message;
-      statusEl.className   = 'opt-connection-status error';
-    }
-  }
-
   async function testWpConnection() {
     const crawlId = optState.crawlId;
     if (!crawlId) return;
-
     const btn = document.getElementById('opt-test-btn');
-    btn.disabled    = true;
-    btn.textContent = 'Testing…';
-
+    btn.disabled = true; btn.textContent = 'Testing…';
     const statusEl = document.getElementById('opt-conn-status');
-    statusEl.textContent   = 'Testing…';
-    statusEl.className     = 'opt-connection-status warning';
-    statusEl.style.display = '';
-
+    statusEl.textContent = 'Testing…'; statusEl.className = 'opt-connection-status warning';
     try {
       const res  = await fetch(`/api/optimize/${crawlId}/ping`, { method: 'POST' });
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || res.statusText);
-
       statusEl.textContent = `Connected · ${data.name || data.site || 'WordPress'} v${data.version || '?'}`;
       statusEl.className   = 'opt-connection-status';
     } catch (e) {
-      statusEl.textContent = 'Connection failed: ' + e.message;
+      statusEl.textContent = 'Failed: ' + e.message;
       statusEl.className   = 'opt-connection-status error';
-    } finally {
-      btn.disabled    = false;
-      btn.textContent = 'Test Connection';
-    }
+    } finally { btn.disabled = false; btn.textContent = 'Test'; }
   }
 
   // ─── SEO Picker ────────────────────────────────────────────────────────────

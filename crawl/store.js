@@ -433,6 +433,144 @@ async function listFinishedCrawls(limit) {
   return data || [];
 }
 
+// ─── Client profile management ────────────────────────────────────────────────
+
+/**
+ * Return all clients ordered by name, each with their latest finished crawl attached.
+ * latest_crawl is null if no finished crawl exists yet.
+ */
+async function listClients() {
+  const sb = getClient();
+
+  const [clientsResult, crawlsResult] = await Promise.all([
+    sb.from('clients').select('*').order('name'),
+    sb.from('crawls')
+      .select('id, client_id, page_count, finished_at')
+      .eq('is_latest', true)
+      .eq('status', 'done'),
+  ]);
+
+  if (clientsResult.error) throw clientsResult.error;
+  if (crawlsResult.error) throw crawlsResult.error;
+
+  const crawlMap = {};
+  for (const c of (crawlsResult.data || [])) {
+    crawlMap[c.client_id] = { id: c.id, page_count: c.page_count, finished_at: c.finished_at };
+  }
+
+  return (clientsResult.data || []).map(client => ({
+    ...client,
+    latest_crawl: crawlMap[client.id] || null,
+  }));
+}
+
+/**
+ * Update editable profile fields for a client.
+ * Only keys present in the allowed list are applied; undefined values are skipped.
+ *
+ * @param {string} clientId
+ * @param {Object} fields - any subset of: name, city, state, practice_type, built_by_mmw,
+ *                          tagline, wp_url, wp_username, wp_app_password
+ */
+async function updateClientProfile(clientId, fields) {
+  const sb = getClient();
+  const ALLOWED_KEYS = ['name', 'city', 'state', 'practice_type', 'built_by_mmw', 'tagline', 'wp_url', 'wp_username', 'wp_app_password'];
+  const updates = {};
+  for (const key of ALLOWED_KEYS) {
+    if (fields[key] !== undefined) updates[key] = fields[key];
+  }
+  if (Object.keys(updates).length === 0) return;
+  const { error } = await sb.from('clients').update(updates).eq('id', clientId);
+  if (error) throw error;
+}
+
+/**
+ * Permanently delete a client and all related data (cascades via FK).
+ *
+ * @param {string} clientId
+ */
+async function deleteClient(clientId) {
+  const sb = getClient();
+  const { error } = await sb.from('clients').delete().eq('id', clientId);
+  if (error) throw error;
+}
+
+// ─── Optimization history ─────────────────────────────────────────────────────
+
+/**
+ * Bulk-insert SEO push records into seo_optimizations.
+ *
+ * @param {string} clientId
+ * @param {string} crawlId
+ * @param {Array}  items - [{ url, before_title, before_meta, after_title, after_meta }]
+ */
+async function saveSeoOptimizations(clientId, crawlId, items) {
+  if (!items || items.length === 0) return;
+  const sb = getClient();
+  const rows = items.map(it => ({
+    client_id:    clientId,
+    crawl_id:     crawlId || null,
+    url:          it.url,
+    before_title: it.before_title || null,
+    before_meta:  it.before_meta  || null,
+    after_title:  it.after_title  || null,
+    after_meta:   it.after_meta   || null,
+  }));
+  const { error } = await sb.from('seo_optimizations').insert(rows);
+  if (error) throw error;
+}
+
+/**
+ * Bulk-insert schema push records into schema_optimizations.
+ *
+ * @param {string} clientId
+ * @param {string} crawlId
+ * @param {Array}  items - [{ url, post_id, schema_type, schema }]
+ */
+async function saveSchemaOptimizations(clientId, crawlId, items) {
+  if (!items || items.length === 0) return;
+  const sb = getClient();
+  const rows = items.map(it => ({
+    client_id:   clientId,
+    crawl_id:    crawlId || null,
+    url:         it.url,
+    post_id:     it.post_id     || null,
+    schema_type: it.schema_type,
+    schema:      it.schema      || {},
+  }));
+  const { error } = await sb.from('schema_optimizations').insert(rows);
+  if (error) throw error;
+}
+
+/**
+ * Retrieve the full SEO and schema optimization history for a client.
+ *
+ * @param {string} clientId
+ * @returns {{ seo: Array, schema: Array }}
+ */
+async function getOptimizationHistory(clientId) {
+  const sb = getClient();
+
+  const [seoResult, schemaResult] = await Promise.all([
+    sb.from('seo_optimizations')
+      .select('*')
+      .eq('client_id', clientId)
+      .order('pushed_at', { ascending: false }),
+    sb.from('schema_optimizations')
+      .select('*')
+      .eq('client_id', clientId)
+      .order('pushed_at', { ascending: false }),
+  ]);
+
+  if (seoResult.error)    throw seoResult.error;
+  if (schemaResult.error) throw schemaResult.error;
+
+  return {
+    seo:    seoResult.data    || [],
+    schema: schemaResult.data || [],
+  };
+}
+
 module.exports = {
   getClient,
   normalizeDomain,
@@ -456,4 +594,10 @@ module.exports = {
   getBrandVoice,
   getBrandVoiceByDomain,
   getBrandVoiceForCrawl,
+  listClients,
+  updateClientProfile,
+  deleteClient,
+  saveSeoOptimizations,
+  saveSchemaOptimizations,
+  getOptimizationHistory,
 };

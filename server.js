@@ -37,6 +37,7 @@ const wp            = require('./lib/wp');
 const Anthropic = require('@anthropic-ai/sdk');
 const { SYSTEM_PROMPT: SEO_SYSTEM,       buildSeoUserMessage }    = require('./prompts/seo-optimize');
 const { SYSTEM_PROMPT: SCHEMA_SYSTEM,    buildSchemaUserMessage }  = require('./prompts/schema-gap');
+const { SYSTEM_PROMPT: REPORT_SYSTEM,    buildReportUserMessage }  = require('./prompts/report');
 
 const app  = express();
 const PORT = parseInt(process.env.PORT, 10) || 3000;
@@ -172,6 +173,139 @@ app.get('/api/client/:domain/latest-crawl', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ─── Client management ────────────────────────────────────────────────────────
+
+// GET /api/clients — list all clients with their latest crawl attached
+app.get('/api/clients', async (req, res) => {
+  try {
+    const clients = await store.listClients();
+    res.json({ clients });
+  } catch (err) {
+    console.error('[clients list] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/clients/:clientId — get a single client by ID
+app.get('/api/clients/:clientId', async (req, res) => {
+  try {
+    const client = await store.getClientById(req.params.clientId);
+    if (!client) return res.status(404).json({ error: 'Client not found' });
+    res.json(client);
+  } catch (err) {
+    console.error('[clients get] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/clients/:clientId — update client profile fields
+app.patch('/api/clients/:clientId', async (req, res) => {
+  try {
+    await store.updateClientProfile(req.params.clientId, req.body || {});
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[clients patch] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/clients/:clientId — permanently delete client and all data
+app.delete('/api/clients/:clientId', async (req, res) => {
+  const { confirm } = req.body || {};
+  if (!confirm) return res.status(400).json({ error: 'Must send { confirm: true } to delete a client' });
+  try {
+    await store.deleteClient(req.params.clientId);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[clients delete] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/clients/:clientId/history — optimization history for a client
+app.get('/api/clients/:clientId/history', async (req, res) => {
+  try {
+    const history = await store.getOptimizationHistory(req.params.clientId);
+    res.json(history);
+  } catch (err) {
+    console.error('[clients history] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/clients/:clientId/report — SSE: generate optimization report with Claude
+app.post('/api/clients/:clientId/report', async (req, res) => {
+  const { crawlId: filterCrawlId } = req.body || {};
+
+  let client;
+  try {
+    client = await store.getClientById(req.params.clientId);
+    if (!client) return res.status(404).json({ error: 'Client not found' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+
+  const emit = sseEmitter(res);
+
+  try {
+    emit('log', { message: 'Building report context...' });
+
+    // Get optimization history, optionally filtered to a specific crawl
+    let { seo: seoHistory, schema: schemaHistory } = await store.getOptimizationHistory(client.id);
+    if (filterCrawlId) {
+      seoHistory    = seoHistory.filter(h => h.crawl_id === filterCrawlId);
+      schemaHistory = schemaHistory.filter(h => h.crawl_id === filterCrawlId);
+    }
+
+    // Get crawl summary
+    let crawlSummary = null;
+    if (filterCrawlId) {
+      crawlSummary = await store.getCrawl(filterCrawlId).catch(() => null);
+    } else {
+      crawlSummary = await store.getMostRecentFinishedCrawl().catch(() => null);
+    }
+
+    // Build a lightweight audit summary from available data
+    const auditSummary = {
+      total:        (crawlSummary && crawlSummary.page_count) || 0,
+      thin:         0,
+      titleMissing: 0,
+      titleShort:   0,
+      titleLong:    0,
+      metaMissing:  0,
+      metaShort:    0,
+    };
+
+    emit('log', { message: 'Generating report with Claude...' });
+
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    let fullText = '';
+
+    const stream = anthropic.messages.stream({
+      model:      'claude-opus-4-7',
+      max_tokens: 4096,
+      thinking:   { type: 'adaptive' },
+      system: [{ type: 'text', text: REPORT_SYSTEM, cache_control: { type: 'ephemeral' } }],
+      messages: [{
+        role:    'user',
+        content: buildReportUserMessage(client, crawlSummary, auditSummary, seoHistory, schemaHistory),
+      }],
+    });
+
+    for await (const event of stream) {
+      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+        fullText += event.delta.text;
+      }
+    }
+
+    emit('done', { report: fullText });
+  } catch (err) {
+    console.error('[report] error:', err);
+    emit('error', { message: err.message });
+  }
+  res.end();
 });
 
 // ─── List of finished crawls (for "switch crawl" dropdown) ───────────────────
@@ -395,6 +529,93 @@ app.patch('/api/voice/:clientId', async (req, res) => {
   }
 });
 
+// GET /api/voice/:clientId/profile/export — download brand voice as Markdown file
+app.get('/api/voice/:clientId/profile/export', async (req, res) => {
+  try {
+    const bv = await store.getBrandVoice(req.params.clientId);
+    if (!bv) return res.status(404).json({ error: 'No brand voice profile found for this client' });
+
+    const domain = (bv.clients && bv.clients.domain) || req.params.clientId;
+    const p      = bv.profile || {};
+
+    const lines = [
+      `# Brand Voice Profile`,
+      `**Client:** ${(bv.clients && bv.clients.name) || domain}`,
+      `**Domain:** ${domain}`,
+      `**Generated:** ${bv.generated_at ? new Date(bv.generated_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Unknown'}`,
+      `**Human edited:** ${bv.human_edited ? 'Yes' : 'No'}`,
+      '',
+      '---',
+      '',
+    ];
+
+    if (p.summary_paragraph) {
+      lines.push('## Summary', '', p.summary_paragraph, '');
+    }
+
+    if (p.tone_descriptors && p.tone_descriptors.length > 0) {
+      lines.push('## Tone Descriptors', '');
+      for (const t of p.tone_descriptors) lines.push(`- ${t}`);
+      lines.push('');
+    }
+
+    if (p.vocabulary) {
+      if (p.vocabulary.preferred && p.vocabulary.preferred.length > 0) {
+        lines.push('## Preferred Vocabulary', '');
+        for (const w of p.vocabulary.preferred) lines.push(`- ${w}`);
+        lines.push('');
+      }
+      if (p.vocabulary.avoided && p.vocabulary.avoided.length > 0) {
+        lines.push('## Vocabulary to Avoid', '');
+        for (const w of p.vocabulary.avoided) lines.push(`- ${w}`);
+        lines.push('');
+      }
+    }
+
+    if (p.sentence_structure) {
+      lines.push('## Sentence Structure', '', p.sentence_structure, '');
+    }
+
+    if (p.do_examples && p.do_examples.length > 0) {
+      lines.push('## Do Examples', '');
+      for (const ex of p.do_examples) lines.push(`- ${ex}`);
+      lines.push('');
+    }
+
+    if (p.dont_examples && p.dont_examples.length > 0) {
+      lines.push('## Do Not Examples', '');
+      for (const ex of p.dont_examples) lines.push(`- ${ex}`);
+      lines.push('');
+    }
+
+    // Include any remaining keys not explicitly handled above
+    const handled = new Set(['summary_paragraph', 'tone_descriptors', 'vocabulary', 'sentence_structure', 'do_examples', 'dont_examples']);
+    for (const [key, val] of Object.entries(p)) {
+      if (handled.has(key) || val == null) continue;
+      const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      lines.push(`## ${label}`, '');
+      if (Array.isArray(val)) {
+        for (const item of val) lines.push(`- ${typeof item === 'object' ? JSON.stringify(item) : item}`);
+      } else if (typeof val === 'object') {
+        lines.push('```json', JSON.stringify(val, null, 2), '```');
+      } else {
+        lines.push(String(val));
+      }
+      lines.push('');
+    }
+
+    const markdown = lines.join('\n');
+    const filename = `brand-voice-${domain}.md`;
+
+    res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(markdown);
+  } catch (err) {
+    console.error('[voice export] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── Optimize tab ────────────────────────────────────────────────────────────
 // WordPress connection + SEO field push + Schema scan/generate/push.
 // All write operations go through the MMW Plugin installed on the client WP site.
@@ -518,7 +739,7 @@ app.post('/api/optimize/:crawlId/seo/generate', async (req, res) => {
       const batch = selected.slice(i, i + BATCH_SIZE);
       emit('log', { message: `Optimizing pages ${i + 1}–${Math.min(i + BATCH_SIZE, selected.length)} of ${selected.length}...` });
 
-      const userContent = buildSeoUserMessage(batch, voiceSummary);
+      const userContent = buildSeoUserMessage(batch, voiceSummary, client);
       let fullText = '';
 
       const stream = anthropic.messages.stream({
@@ -594,11 +815,275 @@ app.post('/api/optimize/:crawlId/seo/push', async (req, res) => {
       }
     }
     res.json({ results });
+
+    // Save push history (fire-and-forget — don't delay or fail the response)
+    setImmediate(async () => {
+      try {
+        const successItems = results.filter(r => r.ok);
+        if (successItems.length === 0) return;
+        const allPages = await store.getCrawlPages(crawl.id).catch(() => []);
+        const pageMap  = {};
+        for (const p of allPages) pageMap[p.url] = p;
+        const historyItems = successItems.map(r => {
+          const orig = items.find(it => it.url === r.url) || {};
+          const pg   = pageMap[r.url] || {};
+          return {
+            url:          r.url,
+            before_title: pg.title            || null,
+            before_meta:  pg.meta_description || null,
+            after_title:  orig.title          || null,
+            after_meta:   orig.meta           || null,
+          };
+        });
+        await store.saveSeoOptimizations(client.id, crawl.id, historyItems);
+      } catch (e) {
+        console.error('[seo push] history save failed:', e);
+      }
+    });
   } catch (err) {
     console.error('[seo push] error:', err);
     res.status(500).json({ error: err.message });
   }
 });
+
+// ─── SEO export routes ───────────────────────────────────────────────────────
+
+// POST /api/optimize/:crawlId/seo/export — internal HTML review doc (MMW-branded)
+app.post('/api/optimize/:crawlId/seo/export', async (req, res) => {
+  try {
+    const { proposals, pages } = req.body || {};
+    if (!Array.isArray(proposals) || proposals.length === 0) {
+      return res.status(400).json({ error: 'proposals array is required' });
+    }
+
+    const { crawl, client } = await resolveCrawlAndClient(req.params.crawlId);
+    const domain   = (crawl && crawl.clients && crawl.clients.domain) || req.params.crawlId;
+    const siteName = (client && client.name) || domain;
+    const date     = new Date().toISOString().split('T')[0];
+
+    const pageMap = {};
+    if (Array.isArray(pages)) {
+      for (const p of pages) pageMap[p.url] = p;
+    }
+
+    const rows = proposals.map(p => {
+      const orig  = pageMap[p.url] || {};
+      const curTitle = orig.title            || '(none)';
+      const curMeta  = orig.meta_description || '(none)';
+      const newTitle = p.proposed_title || '(no change)';
+      const newMeta  = p.proposed_meta  || '(no change)';
+      const reason   = p.reason || '';
+      return `
+        <tr>
+          <td class="url">${escHtml(p.url)}</td>
+          <td>
+            <div class="label">Before</div><div class="before">${escHtml(curTitle)}</div>
+            <div class="label mt">After</div><div class="after">${escHtml(newTitle)}</div>
+          </td>
+          <td>
+            <div class="label">Before</div><div class="before">${escHtml(curMeta)}</div>
+            <div class="label mt">After</div><div class="after">${escHtml(newMeta)}</div>
+          </td>
+          <td class="reason">${escHtml(reason)}</td>
+        </tr>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SEO Proposals — ${escHtml(siteName)}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 13px; color: #1a1a1a; background: #f5f5f5; }
+  .header { background: #0d1f3c; color: #fff; padding: 20px 32px; display: flex; align-items: center; gap: 16px; }
+  .header .logo { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; color: #7ec8e3; }
+  .header .subtitle { font-size: 13px; color: #aac4d4; margin-top: 2px; }
+  .header .client { margin-left: auto; text-align: right; font-size: 12px; color: #aac4d4; }
+  .header .client strong { display: block; font-size: 15px; color: #fff; }
+  .meta-bar { background: #fff; border-bottom: 1px solid #e0e0e0; padding: 10px 32px; font-size: 12px; color: #555; display: flex; gap: 24px; }
+  .container { padding: 24px 32px; }
+  table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  thead { background: #0d1f3c; color: #fff; }
+  thead th { padding: 12px 14px; text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+  tbody tr { border-bottom: 1px solid #f0f0f0; }
+  tbody tr:last-child { border-bottom: none; }
+  td { padding: 12px 14px; vertical-align: top; }
+  td.url { font-size: 11px; color: #555; word-break: break-all; max-width: 220px; }
+  td.reason { font-size: 12px; color: #666; max-width: 180px; }
+  .label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #999; margin-bottom: 2px; }
+  .label.mt { margin-top: 8px; }
+  .before { color: #888; font-size: 12px; }
+  .after  { color: #0d6e3f; font-size: 12px; font-weight: 500; }
+  .footer { text-align: center; padding: 20px; font-size: 11px; color: #aaa; }
+  @media print { body { background: #fff; } .header { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+</style>
+</head>
+<body>
+<div class="header">
+  <div>
+    <div class="logo">MMW</div>
+    <div class="subtitle">Medical Marketing Whiz — Internal Review</div>
+  </div>
+  <div class="client">
+    <strong>${escHtml(siteName)}</strong>
+    ${escHtml(domain)}
+  </div>
+</div>
+<div class="meta-bar">
+  <span>Generated: ${date}</span>
+  <span>Proposals: ${proposals.length}</span>
+  <span>Document type: Internal Review</span>
+</div>
+<div class="container">
+  <table>
+    <thead>
+      <tr>
+        <th>URL</th>
+        <th>Title</th>
+        <th>Meta Description</th>
+        <th>Reason</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows}
+    </tbody>
+  </table>
+</div>
+<div class="footer">MMW Site Intelligence &mdash; Confidential &mdash; Internal Use Only</div>
+</body>
+</html>`;
+
+    const filename = `seo-proposals-${domain}-${date}.html`;
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(html);
+  } catch (err) {
+    console.error('[seo export] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/optimize/:crawlId/seo/approval — client-facing printable HTML
+app.post('/api/optimize/:crawlId/seo/approval', async (req, res) => {
+  try {
+    const { proposals, pages, clientName: bodyClientName } = req.body || {};
+    if (!Array.isArray(proposals) || proposals.length === 0) {
+      return res.status(400).json({ error: 'proposals array is required' });
+    }
+
+    const { crawl, client } = await resolveCrawlAndClient(req.params.crawlId);
+    const domain   = (crawl && crawl.clients && crawl.clients.domain) || req.params.crawlId;
+    const siteName = bodyClientName || (client && client.name) || domain;
+    const date     = new Date().toISOString().split('T')[0];
+
+    const pageMap = {};
+    if (Array.isArray(pages)) {
+      for (const p of pages) pageMap[p.url] = p;
+    }
+
+    const rows = proposals.map(p => {
+      const orig     = pageMap[p.url] || {};
+      const curTitle = orig.title            || '(none)';
+      const curMeta  = orig.meta_description || '(none)';
+      const newTitle = p.proposed_title || '(no change)';
+      const newMeta  = p.proposed_meta  || '(no change)';
+      return `
+        <tr>
+          <td class="url">${escHtml(p.url)}</td>
+          <td>
+            <div class="label">Current</div><div class="before">${escHtml(curTitle)}</div>
+            <div class="label mt">Proposed</div><div class="after">${escHtml(newTitle)}</div>
+          </td>
+          <td>
+            <div class="label">Current</div><div class="before">${escHtml(curMeta)}</div>
+            <div class="label mt">Proposed</div><div class="after">${escHtml(newMeta)}</div>
+          </td>
+        </tr>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SEO Optimization Proposals — ${escHtml(siteName)}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 13px; color: #1a1a1a; background: #fff; }
+  .header { padding: 32px 40px 20px; border-bottom: 2px solid #0d1f3c; }
+  .header h1 { font-size: 22px; font-weight: 700; color: #0d1f3c; }
+  .header .practice { font-size: 15px; color: #444; margin-top: 4px; }
+  .header .date { font-size: 12px; color: #888; margin-top: 6px; }
+  .intro { padding: 20px 40px; font-size: 13px; color: #444; line-height: 1.6; border-bottom: 1px solid #eee; }
+  .container { padding: 24px 40px; }
+  table { width: 100%; border-collapse: collapse; }
+  thead { background: #0d1f3c; color: #fff; }
+  thead th { padding: 10px 14px; text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+  tbody tr { border-bottom: 1px solid #eee; }
+  tbody tr:last-child { border-bottom: none; }
+  td { padding: 12px 14px; vertical-align: top; }
+  td.url { font-size: 11px; color: #666; word-break: break-all; max-width: 200px; }
+  .label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #aaa; margin-bottom: 2px; }
+  .label.mt { margin-top: 8px; }
+  .before { color: #999; font-size: 12px; }
+  .after  { color: #1a5c3b; font-size: 12px; font-weight: 500; }
+  .approval-row { margin-top: 32px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 12px; color: #555; }
+  .sig-line { display: inline-block; width: 240px; border-bottom: 1px solid #999; margin: 0 12px; }
+  .footer { text-align: center; padding: 24px 40px; font-size: 11px; color: #bbb; border-top: 1px solid #eee; margin-top: 24px; }
+  @media print { body { background: #fff; } thead { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>SEO Optimization Proposals</h1>
+  <div class="practice">${escHtml(siteName)}</div>
+  <div class="date">Prepared: ${date}</div>
+</div>
+<div class="intro">
+  The following page titles and meta descriptions have been reviewed and optimized for local search visibility.
+  Please review the proposed changes and approve for implementation.
+</div>
+<div class="container">
+  <table>
+    <thead>
+      <tr>
+        <th>Page URL</th>
+        <th>Title Tag</th>
+        <th>Meta Description</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows}
+    </tbody>
+  </table>
+  <div class="approval-row">
+    Approved by: <span class="sig-line">&nbsp;</span> Date: <span class="sig-line">&nbsp;</span>
+  </div>
+</div>
+<div class="footer">Prepared by Medical Marketing Whiz &mdash; ${escHtml(domain)}</div>
+</body>
+</html>`;
+
+    const filename = `seo-approval-${domain}-${date}.html`;
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(html);
+  } catch (err) {
+    console.error('[seo approval] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// HTML escape helper used by export routes
+function escHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
 
 // ─── Schema scan + analyze ────────────────────────────────────────────────────
 // POST /api/optimize/:crawlId/schema/scan-analyze — SSE: scan existing schemas
@@ -678,7 +1163,7 @@ app.post('/api/optimize/:crawlId/schema/scan-analyze', async (req, res) => {
       );
 
       // Claude-based gap analysis
-      const userContent = buildSchemaUserMessage(contextPages, clientName);
+      const userContent = buildSchemaUserMessage(contextPages, clientName, client);
       let fullText = '';
 
       const stream = anthropic.messages.stream({
@@ -757,6 +1242,26 @@ app.post('/api/optimize/:crawlId/schema/push', async (req, res) => {
       }
     }
     res.json({ results });
+
+    // Save push history (fire-and-forget)
+    setImmediate(async () => {
+      try {
+        const successItems = results.filter(r => r.ok);
+        if (successItems.length === 0) return;
+        const histItems = successItems.map(r => {
+          const orig = items.find(it => it.url === r.url && it.schemaType === r.schemaType) || {};
+          return {
+            url:         r.url,
+            post_id:     orig.postId     || null,
+            schema_type: r.schemaType,
+            schema:      orig.schema     || {},
+          };
+        });
+        await store.saveSchemaOptimizations(client.id, crawl.id, histItems);
+      } catch (e) {
+        console.error('[schema push] history save failed:', e);
+      }
+    });
   } catch (err) {
     console.error('[schema push] error:', err);
     res.status(500).json({ error: err.message });
