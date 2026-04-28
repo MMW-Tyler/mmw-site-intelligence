@@ -577,13 +577,106 @@
     cursor: pointer;
   }
 
+  /* ─── Optimize tab ───────────────────────────────────────────────────────── */
+  .opt-sub-nav {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 16px;
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 0;
+  }
+  .opt-sub-tab {
+    padding: 9px 18px;
+    font-size: 13px;
+    font-family: 'Barlow', sans-serif;
+    font-weight: 600;
+    color: var(--text-secondary);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    cursor: pointer;
+    border-radius: 6px 6px 0 0;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .opt-sub-tab:hover { color: var(--dark); }
+  .opt-sub-tab.active { color: var(--green); border-bottom-color: var(--green); }
+
+  .opt-connection-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-family: 'Barlow', sans-serif;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 20px;
+    background: var(--green-lighter);
+    color: var(--green-mid);
+  }
+  .opt-connection-status.error   { background: #fde8e8; color: #c0392b; }
+  .opt-connection-status.warning { background: #fef3cd; color: #856404; }
+
+  /* SEO optimizer table */
+  .seo-table-wrap { overflow-x: auto; margin-top: 12px; }
+  .seo-table { width: 100%; border-collapse: collapse; font-size: 12.5px; font-family: 'Barlow', sans-serif; }
+  .seo-table thead th {
+    background: var(--green-lighter);
+    color: var(--text-secondary);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 8px 10px;
+    text-align: left;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--border);
+  }
+  .seo-table tbody td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .seo-table tbody tr:last-child td { border-bottom: none; }
+  .seo-table tbody tr:hover { background: var(--green-lighter); }
+  .seo-table .seo-url { font-family: var(--mono); font-size: 11px; color: var(--dark-mid); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .seo-table .seo-url a { color: var(--dark-mid); text-decoration: none; }
+  .seo-table .seo-url a:hover { color: var(--green-mid); }
+  .seo-field-box { width: 100%; box-sizing: border-box; font-size: 12px; font-family: 'Barlow', sans-serif; color: var(--dark); padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: 6px; resize: vertical; line-height: 1.5; min-height: 52px; }
+  .seo-field-box:focus { outline: none; border-color: var(--green); }
+  .char-count { font-size: 10px; font-family: 'Barlow', sans-serif; color: var(--text-muted); margin-top: 2px; }
+  .char-count.ok     { color: var(--green-mid); }
+  .char-count.warn   { color: var(--amber); }
+  .char-count.bad    { color: var(--red); }
+  .push-status { font-size: 11px; font-family: 'Barlow', sans-serif; }
+  .push-status.ok   { color: var(--green-mid); }
+  .push-status.err  { color: var(--red); }
+
+  /* Schema proposals */
+  .schema-page-card { border: 1px solid var(--border); border-radius: 10px; margin-bottom: 12px; overflow: hidden; }
+  .schema-page-header {
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+    padding: 12px 16px; background: var(--green-lighter); cursor: pointer;
+  }
+  .schema-page-header:hover { background: #d4efea; }
+  .schema-page-url { font-family: var(--mono); font-size: 12px; color: var(--dark-mid); }
+  .schema-page-body { padding: 12px 16px; display: none; }
+  .schema-page-body.open { display: block; }
+  .schema-item { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px; padding: 12px; }
+  .schema-item-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+  .schema-type-badge {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+    padding: 3px 9px; border-radius: 20px;
+    background: var(--dark); color: var(--white);
+    font-family: 'Barlow', sans-serif;
+  }
+  .schema-reason { font-size: 12px; color: var(--text-secondary); font-family: 'Barlow', sans-serif; flex: 1; }
+  .schema-json-area { width: 100%; box-sizing: border-box; font-family: var(--mono); font-size: 11px; padding: 8px; border: 1px solid var(--border-strong); border-radius: 6px; resize: vertical; min-height: 120px; line-height: 1.5; }
+  .schema-json-area:focus { outline: none; border-color: var(--green); }
+
 </style>
 </head>
 <body>
 
 <nav>
   <div class="nav-title">MMW <span>Site Intelligence</span></div>
-  <div class="nav-badge">Phase 4 — Brand Voice</div>
+  <div class="nav-badge">Phase 5 — Optimize</div>
 </nav>
 
 <main>
@@ -596,7 +689,8 @@
     <button class="tab active" data-tab="crawl" onclick="switchTab('crawl', this)">Crawl</button>
     <button class="tab" data-tab="audit"  onclick="switchTab('audit', this)">Audit</button>
     <button class="tab" data-tab="scout"  onclick="switchTab('scout', this)">Scout</button>
-    <button class="tab" data-tab="voice" onclick="switchTab('voice', this)">Brand Voice</button>
+    <button class="tab" data-tab="voice"    onclick="switchTab('voice', this)">Brand Voice</button>
+    <button class="tab" data-tab="optimize" onclick="switchTab('optimize', this)">Optimize</button>
   </div>
 
   <!-- ─── CRAWL TAB ─────────────────────────────────────────────────────── -->
@@ -1055,6 +1149,202 @@
 
   </section>
 
+  <section class="tab-panel" id="panel-optimize">
+
+    <div class="card audit-empty hidden" id="opt-empty">
+      <h3>No completed crawls yet</h3>
+      <p>Run a crawl first, then return here to optimize SEO fields and schema.</p>
+    </div>
+    <div class="card audit-empty hidden" id="opt-loading"><h3>Loading&hellip;</h3></div>
+
+    <div id="opt-main" class="hidden">
+
+      <!-- Toolbar -->
+      <div class="card">
+        <div class="audit-toolbar">
+          <div class="audit-context">
+            <div class="audit-context-domain" id="opt-domain">—</div>
+            <div class="audit-context-meta"   id="opt-meta">—</div>
+          </div>
+          <div class="audit-actions">
+            <select class="crawl-select" id="opt-crawl-select" onchange="loadOptimizeTab(this.value)"></select>
+          </div>
+        </div>
+      </div>
+
+      <!-- WP Connection card -->
+      <div class="card" id="opt-connection-card">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:12px;">
+          <div>
+            <div class="card-title" style="margin-bottom:2px;">WordPress Connection</div>
+            <div class="card-sub">Required to push SEO changes and schema to the live site.</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <span id="opt-conn-status" class="opt-connection-status warning" style="display:none;"></span>
+            <a id="opt-plugin-download" href="/api/optimize/plugin/download" class="secondary" style="font-size:12px;padding:7px 14px;text-decoration:none;border-radius:8px;border:1px solid var(--border-strong);font-family:Barlow,sans-serif;font-weight:600;color:var(--dark-mid);" download>Download Plugin</a>
+            <button class="secondary" id="opt-test-btn" onclick="testWpConnection()" style="font-size:12px;padding:7px 14px;">Test Connection</button>
+            <button class="primary" onclick="saveWpCredentials()" style="font-size:12px;padding:7px 14px;">Save</button>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;" class="opt-creds-grid">
+          <div>
+            <label class="voice-label">WordPress URL</label>
+            <input type="url" id="opt-wp-url" placeholder="https://clientsite.com" class="voice-textarea" style="height:auto;padding:8px 12px;resize:none;">
+          </div>
+          <div>
+            <label class="voice-label">Username</label>
+            <input type="text" id="opt-wp-username" placeholder="admin" autocomplete="off" class="voice-textarea" style="height:auto;padding:8px 12px;resize:none;">
+          </div>
+          <div>
+            <label class="voice-label">Application Password</label>
+            <input type="password" id="opt-wp-password" placeholder="xxxx xxxx xxxx xxxx" autocomplete="off" class="voice-textarea" style="height:auto;padding:8px 12px;resize:none;">
+          </div>
+        </div>
+        <p style="font-size:11px;color:var(--text-muted);margin-top:8px;font-family:Barlow,sans-serif;">
+          Generate an application password at: WP Admin &rarr; Users &rarr; Profile &rarr; Application Passwords.
+          Install the plugin via WP Admin &rarr; Plugins &rarr; Add New &rarr; Upload Plugin.
+        </p>
+      </div>
+
+      <!-- Sub-navigation -->
+      <div class="opt-sub-nav">
+        <button class="opt-sub-tab active" onclick="switchOptTab('seo', this)">SEO Optimizer</button>
+        <button class="opt-sub-tab"        onclick="switchOptTab('schema', this)">Schema Optimizer</button>
+      </div>
+
+      <!-- ── SEO panel ─────────────────────────────────────────────────────── -->
+      <div id="opt-seo-panel">
+
+        <!-- Generating state -->
+        <div class="card hidden" id="seo-generating">
+          <div class="card-title">Generating SEO Recommendations</div>
+          <div id="seo-progress-log" style="margin-top:12px;font-size:13px;font-family:Barlow,sans-serif;color:var(--text-secondary);line-height:1.8;"></div>
+        </div>
+
+        <!-- Picker state -->
+        <div id="seo-picker-section">
+          <div class="card">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+              <div>
+                <div class="card-title">Select pages to optimize</div>
+                <div class="card-sub" id="seo-picker-sub">Claude will draft an optimized title and meta description for each selected page.</div>
+              </div>
+              <button class="primary" id="seo-generate-btn" onclick="generateSeoRecommendations()" disabled>Generate (0 selected)</button>
+            </div>
+            <div class="filter-row" style="justify-content:space-between;gap:12px;margin-top:12px;">
+              <input type="text" id="seo-search" placeholder="Search by URL or title&hellip;" oninput="renderSeoPickerTable()" style="flex:1;min-width:180px;">
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <button class="secondary" onclick="seoSelectDefaults()" style="font-size:12px;padding:7px 14px;">Select defaults</button>
+                <button class="secondary" onclick="seoSelectAll()"      style="font-size:12px;padding:7px 14px;">Select all</button>
+                <button class="secondary" onclick="seoDeselectAll()"    style="font-size:12px;padding:7px 14px;">Deselect all</button>
+              </div>
+            </div>
+            <div class="audit-table-wrap">
+              <table class="audit-table" id="seo-picker-table">
+                <thead><tr>
+                  <th style="width:38px;text-align:center;cursor:default;">
+                    <input type="checkbox" id="seo-header-cb" onchange="seoToggleVisible(this.checked)" style="accent-color:var(--green);">
+                  </th>
+                  <th>URL</th><th>Title</th><th class="num">Words</th><th class="num">Status</th>
+                </tr></thead>
+                <tbody id="seo-picker-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Results state -->
+        <div id="seo-results-section" class="hidden">
+          <div class="card">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:8px;">
+              <div>
+                <div class="card-title">SEO Recommendations</div>
+                <div class="card-sub" id="seo-results-sub"></div>
+              </div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <button class="secondary" onclick="showSeoState('picker')" style="font-size:12px;padding:7px 14px;">Back to picker</button>
+                <button class="primary" id="seo-push-all-btn" onclick="pushAllSeo()">Push all to WordPress</button>
+              </div>
+            </div>
+            <div class="seo-table-wrap">
+              <table class="seo-table">
+                <thead><tr>
+                  <th style="width:160px;">URL</th>
+                  <th>Current Title</th>
+                  <th>Proposed Title</th>
+                  <th>Current Meta</th>
+                  <th>Proposed Meta</th>
+                  <th style="width:80px;">Action</th>
+                </tr></thead>
+                <tbody id="seo-results-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Schema panel ──────────────────────────────────────────────────── -->
+      <div id="opt-schema-panel" class="hidden">
+
+        <!-- Scanning/analyzing state -->
+        <div class="card hidden" id="schema-generating">
+          <div class="card-title">Scanning &amp; Analyzing Schemas</div>
+          <div id="schema-progress-log" style="margin-top:12px;font-size:13px;font-family:Barlow,sans-serif;color:var(--text-secondary);line-height:1.8;"></div>
+        </div>
+
+        <!-- Picker state -->
+        <div id="schema-picker-section">
+          <div class="card">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+              <div>
+                <div class="card-title">Select pages to scan</div>
+                <div class="card-sub" id="schema-picker-sub">The tool will scan existing schemas via the WP plugin, then Claude will identify gaps and generate JSON-LD for each page.</div>
+              </div>
+              <button class="primary" id="schema-scan-btn" onclick="runSchemaScanAnalyze()" disabled>Scan &amp; Analyze (0 selected)</button>
+            </div>
+            <div class="filter-row" style="justify-content:space-between;gap:12px;margin-top:12px;">
+              <input type="text" id="schema-search" placeholder="Search by URL or title&hellip;" oninput="renderSchemaPickerTable()" style="flex:1;min-width:180px;">
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <button class="secondary" onclick="schemaSelectDefaults()" style="font-size:12px;padding:7px 14px;">Select defaults</button>
+                <button class="secondary" onclick="schemaSelectAll()"      style="font-size:12px;padding:7px 14px;">Select all</button>
+                <button class="secondary" onclick="schemaDeselectAll()"    style="font-size:12px;padding:7px 14px;">Deselect all</button>
+              </div>
+            </div>
+            <div class="audit-table-wrap">
+              <table class="audit-table" id="schema-picker-table">
+                <thead><tr>
+                  <th style="width:38px;text-align:center;cursor:default;">
+                    <input type="checkbox" id="schema-header-cb" onchange="schemaToggleVisible(this.checked)" style="accent-color:var(--green);">
+                  </th>
+                  <th>URL</th><th>Title</th><th class="num">Words</th><th class="num">Status</th>
+                </tr></thead>
+                <tbody id="schema-picker-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Results state -->
+        <div id="schema-results-section" class="hidden">
+          <div class="card">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:8px;">
+              <div>
+                <div class="card-title">Schema Proposals</div>
+                <div class="card-sub" id="schema-results-sub">Review each schema below. Edit the JSON if needed, then push to WordPress.</div>
+              </div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <button class="secondary" onclick="showSchemaState('picker')" style="font-size:12px;padding:7px 14px;">Back to picker</button>
+                <button class="primary" id="schema-push-all-btn" onclick="pushAllSchemas()">Push all to WordPress</button>
+              </div>
+            </div>
+            <div id="schema-proposals-list"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
 </main>
 
 <script>
@@ -1072,7 +1362,8 @@
     document.getElementById('panel-' + name).classList.add('active');
     if (name === 'audit') initAuditTab();
     if (name === 'scout') initScoutTab();
-    if (name === 'voice') initVoiceTab();
+    if (name === 'voice')    initVoiceTab();
+    if (name === 'optimize') initOptimizeTab();
   }
 
   // ─── Crawl flow ────────────────────────────────────────────────────────
@@ -2247,6 +2538,747 @@
       alert('Generation failed: ' + e.message);
     } finally {
       updateScoutGenBtn();
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // OPTIMIZE TAB
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const optState = {
+    initialized:     false,
+    crawlId:         null,
+    crawl:           null,
+    clientId:        null,
+    pages:           [],
+    seoSelected:     new Set(),
+    seoVisible:      [],
+    schemaSelected:  new Set(),
+    schemaVisible:   [],
+    seoProposals:    [],
+    schemaProposals: [],
+    activeSubTab:    'seo',
+  };
+
+  async function initOptimizeTab() {
+    if (optState.initialized) return;
+    optState.initialized = true;
+    showOptState('loading');
+    try {
+      const res = await fetch('/api/crawls?limit=50');
+      const { crawls } = await res.json();
+      if (!crawls || crawls.length === 0) { showOptState('empty'); return; }
+      populateOptSelect(crawls);
+      await loadOptimizeTab('latest');
+    } catch (e) {
+      console.error('Optimize init failed', e);
+      showOptState('empty');
+    }
+  }
+
+  function populateOptSelect(crawls) {
+    const sel = document.getElementById('opt-crawl-select');
+    sel.innerHTML = '<option value="latest">Most recent crawl</option>';
+    crawls.forEach(c => {
+      const dom  = (c.clients && c.clients.domain) || 'unknown';
+      const date = (c.finished_at || '').split('T')[0];
+      const opt  = document.createElement('option');
+      opt.value       = c.id;
+      opt.textContent = `${dom} — ${date} (${c.page_count} pages)`;
+      sel.appendChild(opt);
+    });
+  }
+
+  async function loadOptimizeTab(crawlId) {
+    showOptState('loading');
+    try {
+      const [pagesRes, connRes] = await Promise.all([
+        fetch(`/api/voice/${crawlId}/pages`),
+        fetch(`/api/optimize/${crawlId}/connection`),
+      ]);
+
+      if (!pagesRes.ok) throw new Error(((await pagesRes.json().catch(() => ({}))).error) || pagesRes.statusText);
+      const data = await pagesRes.json();
+
+      optState.crawlId = data.crawlId;
+      optState.crawl   = data.crawl;
+      optState.pages   = data.pages || [];
+
+      const defaults = optState.pages.filter(p => p.default_checked).map(p => p.url);
+      optState.seoSelected    = new Set(defaults);
+      optState.schemaSelected = new Set(defaults);
+
+      const c   = data.crawl;
+      const dom = (c.clients && c.clients.domain) || c.target_url || 'unknown';
+      const nam = (c.clients && c.clients.name)   || dom;
+      document.getElementById('opt-domain').textContent = nam;
+      document.getElementById('opt-meta').textContent   =
+        `${dom} · crawled ${(c.finished_at || '').split('T')[0]} · ${optState.pages.length} pages`;
+
+      if (connRes.ok) {
+        const conn = await connRes.json();
+        optState.clientId = conn.clientId;
+        document.getElementById('opt-wp-url').value      = conn.wp_url      || '';
+        document.getElementById('opt-wp-username').value = conn.wp_username || '';
+        document.getElementById('opt-wp-password').value = '';
+        const statusEl = document.getElementById('opt-conn-status');
+        if (conn.hasCredentials) {
+          statusEl.textContent   = 'Credentials saved';
+          statusEl.className     = 'opt-connection-status';
+          statusEl.style.display = '';
+        } else {
+          statusEl.style.display = 'none';
+        }
+      }
+
+      renderSeoPickerTable();
+      renderSchemaPickerTable();
+      updateSeoGenBtn();
+      updateSchemaGenBtn();
+      showOptState('main');
+    } catch (e) {
+      console.error('Optimize load failed', e);
+      showOptState('empty');
+    }
+  }
+
+  function showOptState(state) {
+    document.getElementById('opt-empty').classList.toggle('hidden',   state !== 'empty');
+    document.getElementById('opt-loading').classList.toggle('hidden', state !== 'loading');
+    document.getElementById('opt-main').classList.toggle('hidden',    state === 'empty' || state === 'loading');
+  }
+
+  function switchOptTab(tab, btn) {
+    document.querySelectorAll('.opt-sub-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('opt-seo-panel').classList.toggle('hidden',    tab !== 'seo');
+    document.getElementById('opt-schema-panel').classList.toggle('hidden', tab !== 'schema');
+    optState.activeSubTab = tab;
+  }
+
+  // ─── WP Credentials ────────────────────────────────────────────────────────
+
+  async function saveWpCredentials() {
+    const crawlId = optState.crawlId;
+    if (!crawlId) return;
+
+    const url      = document.getElementById('opt-wp-url').value.trim();
+    const username = document.getElementById('opt-wp-username').value.trim();
+    const password = document.getElementById('opt-wp-password').value;
+
+    const statusEl = document.getElementById('opt-conn-status');
+    statusEl.textContent   = 'Saving…';
+    statusEl.className     = 'opt-connection-status warning';
+    statusEl.style.display = '';
+
+    try {
+      const body = { wp_url: url || null, wp_username: username || null };
+      if (password) body.wp_app_password = password;
+
+      const res = await fetch(`/api/optimize/${crawlId}/connection`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))).error) || res.statusText);
+
+      statusEl.textContent   = 'Saved';
+      statusEl.className     = 'opt-connection-status';
+      document.getElementById('opt-wp-password').value = '';
+    } catch (e) {
+      statusEl.textContent = 'Save failed: ' + e.message;
+      statusEl.className   = 'opt-connection-status error';
+    }
+  }
+
+  async function testWpConnection() {
+    const crawlId = optState.crawlId;
+    if (!crawlId) return;
+
+    const btn = document.getElementById('opt-test-btn');
+    btn.disabled    = true;
+    btn.textContent = 'Testing…';
+
+    const statusEl = document.getElementById('opt-conn-status');
+    statusEl.textContent   = 'Testing…';
+    statusEl.className     = 'opt-connection-status warning';
+    statusEl.style.display = '';
+
+    try {
+      const res  = await fetch(`/api/optimize/${crawlId}/ping`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || res.statusText);
+
+      statusEl.textContent = `Connected · ${data.name || data.site || 'WordPress'} v${data.version || '?'}`;
+      statusEl.className   = 'opt-connection-status';
+    } catch (e) {
+      statusEl.textContent = 'Connection failed: ' + e.message;
+      statusEl.className   = 'opt-connection-status error';
+    } finally {
+      btn.disabled    = false;
+      btn.textContent = 'Test Connection';
+    }
+  }
+
+  // ─── SEO Picker ────────────────────────────────────────────────────────────
+
+  function renderSeoPickerTable() {
+    const search = (document.getElementById('seo-search').value || '').toLowerCase();
+    let rows = optState.pages.slice();
+    if (search) rows = rows.filter(p =>
+      (p.url   || '').toLowerCase().includes(search) ||
+      (p.title || '').toLowerCase().includes(search)
+    );
+    optState.seoVisible = rows.map(p => p.url);
+
+    const tbody = document.getElementById('seo-picker-tbody');
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="padding:32px;text-align:center;color:var(--text-muted);">No pages match.</td></tr>';
+    } else {
+      tbody.innerHTML = rows.map(p => {
+        const checked     = optState.seoSelected.has(p.url) ? 'checked' : '';
+        const status      = p.status_code || 0;
+        const statusClass = status >= 200 && status < 300 ? 'status-2xx'
+                          : status >= 300 && status < 400 ? 'status-3xx'
+                          : status >= 400 ? 'status-4xx' : 'status-0';
+        const wc          = p.word_count || 0;
+        const wcStyle     = wc > 0 && wc < 200 ? 'color:var(--amber)' : '';
+        const urlDisplay  = escapeHTML(p.url.replace(/^https?:\/\/[^\/]+/, '')) || '/';
+        return `<tr>
+          <td style="text-align:center;">
+            <input type="checkbox" ${checked} style="accent-color:var(--green);"
+              data-url="${escapeHTML(p.url)}"
+              onchange="seoTogglePage(this.dataset.url, this.checked)">
+          </td>
+          <td title="${escapeHTML(p.url)}">
+            <a href="${escapeHTML(p.url)}" target="_blank" rel="noopener"
+              style="font-family:var(--mono);font-size:11px;color:var(--dark-mid);text-decoration:none;">
+              ${urlDisplay}
+            </a>
+          </td>
+          <td>${escapeHTML(p.h1 || p.title || '')}</td>
+          <td class="num" style="${wcStyle}">${wc.toLocaleString()}</td>
+          <td class="num"><span class="${statusClass}">${status === 0 ? 'fail' : status}</span></td>
+        </tr>`;
+      }).join('');
+    }
+
+    const sub = document.getElementById('seo-picker-sub');
+    sub.textContent = `${rows.length} of ${optState.pages.length} pages shown · ${optState.seoSelected.size} selected. Claude will draft an optimized title and meta description for each selected page.`;
+    updateSeoGenBtn();
+    updateSeoHeaderCb();
+  }
+
+  function seoTogglePage(url, checked) {
+    if (checked) optState.seoSelected.add(url);
+    else         optState.seoSelected.delete(url);
+    updateSeoGenBtn();
+    updateSeoHeaderCb();
+    const sub = document.getElementById('seo-picker-sub');
+    sub.textContent = `${optState.seoVisible.length} of ${optState.pages.length} pages shown · ${optState.seoSelected.size} selected. Claude will draft an optimized title and meta description for each selected page.`;
+  }
+
+  function seoToggleVisible(checked) {
+    optState.seoVisible.forEach(url => {
+      if (checked) optState.seoSelected.add(url);
+      else         optState.seoSelected.delete(url);
+    });
+    renderSeoPickerTable();
+  }
+
+  function seoSelectDefaults() {
+    optState.seoSelected = new Set(optState.pages.filter(p => p.default_checked).map(p => p.url));
+    renderSeoPickerTable();
+  }
+  function seoSelectAll()   { optState.seoSelected = new Set(optState.pages.map(p => p.url)); renderSeoPickerTable(); }
+  function seoDeselectAll() { optState.seoSelected = new Set(); renderSeoPickerTable(); }
+
+  function updateSeoGenBtn() {
+    const btn = document.getElementById('seo-generate-btn');
+    const n   = optState.seoSelected.size;
+    btn.disabled    = n === 0;
+    btn.textContent = `Generate (${n} selected)`;
+  }
+
+  function updateSeoHeaderCb() {
+    const cb = document.getElementById('seo-header-cb');
+    if (!cb) return;
+    const visible  = optState.seoVisible.length;
+    const selected = optState.seoVisible.filter(u => optState.seoSelected.has(u)).length;
+    cb.indeterminate = selected > 0 && selected < visible;
+    cb.checked       = visible > 0 && selected === visible;
+  }
+
+  // ─── Schema Picker ─────────────────────────────────────────────────────────
+
+  function renderSchemaPickerTable() {
+    const search = (document.getElementById('schema-search').value || '').toLowerCase();
+    let rows = optState.pages.slice();
+    if (search) rows = rows.filter(p =>
+      (p.url   || '').toLowerCase().includes(search) ||
+      (p.title || '').toLowerCase().includes(search)
+    );
+    optState.schemaVisible = rows.map(p => p.url);
+
+    const tbody = document.getElementById('schema-picker-tbody');
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="padding:32px;text-align:center;color:var(--text-muted);">No pages match.</td></tr>';
+    } else {
+      tbody.innerHTML = rows.map(p => {
+        const checked     = optState.schemaSelected.has(p.url) ? 'checked' : '';
+        const status      = p.status_code || 0;
+        const statusClass = status >= 200 && status < 300 ? 'status-2xx'
+                          : status >= 300 && status < 400 ? 'status-3xx'
+                          : status >= 400 ? 'status-4xx' : 'status-0';
+        const wc          = p.word_count || 0;
+        const wcStyle     = wc > 0 && wc < 200 ? 'color:var(--amber)' : '';
+        const urlDisplay  = escapeHTML(p.url.replace(/^https?:\/\/[^\/]+/, '')) || '/';
+        return `<tr>
+          <td style="text-align:center;">
+            <input type="checkbox" ${checked} style="accent-color:var(--green);"
+              data-url="${escapeHTML(p.url)}"
+              onchange="schemaTogglePage(this.dataset.url, this.checked)">
+          </td>
+          <td title="${escapeHTML(p.url)}">
+            <a href="${escapeHTML(p.url)}" target="_blank" rel="noopener"
+              style="font-family:var(--mono);font-size:11px;color:var(--dark-mid);text-decoration:none;">
+              ${urlDisplay}
+            </a>
+          </td>
+          <td>${escapeHTML(p.h1 || p.title || '')}</td>
+          <td class="num" style="${wcStyle}">${wc.toLocaleString()}</td>
+          <td class="num"><span class="${statusClass}">${status === 0 ? 'fail' : status}</span></td>
+        </tr>`;
+      }).join('');
+    }
+
+    const sub = document.getElementById('schema-picker-sub');
+    sub.textContent = `${rows.length} of ${optState.pages.length} pages shown · ${optState.schemaSelected.size} selected. The tool will scan existing schemas, then Claude identifies gaps and generates JSON-LD.`;
+    updateSchemaGenBtn();
+    updateSchemaHeaderCb();
+  }
+
+  function schemaTogglePage(url, checked) {
+    if (checked) optState.schemaSelected.add(url);
+    else         optState.schemaSelected.delete(url);
+    updateSchemaGenBtn();
+    updateSchemaHeaderCb();
+    const sub = document.getElementById('schema-picker-sub');
+    sub.textContent = `${optState.schemaVisible.length} of ${optState.pages.length} pages shown · ${optState.schemaSelected.size} selected. The tool will scan existing schemas, then Claude identifies gaps and generates JSON-LD.`;
+  }
+
+  function schemaToggleVisible(checked) {
+    optState.schemaVisible.forEach(url => {
+      if (checked) optState.schemaSelected.add(url);
+      else         optState.schemaSelected.delete(url);
+    });
+    renderSchemaPickerTable();
+  }
+
+  function schemaSelectDefaults() {
+    optState.schemaSelected = new Set(optState.pages.filter(p => p.default_checked).map(p => p.url));
+    renderSchemaPickerTable();
+  }
+  function schemaSelectAll()   { optState.schemaSelected = new Set(optState.pages.map(p => p.url)); renderSchemaPickerTable(); }
+  function schemaDeselectAll() { optState.schemaSelected = new Set(); renderSchemaPickerTable(); }
+
+  function updateSchemaGenBtn() {
+    const btn = document.getElementById('schema-scan-btn');
+    const n   = optState.schemaSelected.size;
+    btn.disabled    = n === 0;
+    btn.textContent = `Scan & Analyze (${n} selected)`;
+  }
+
+  function updateSchemaHeaderCb() {
+    const cb = document.getElementById('schema-header-cb');
+    if (!cb) return;
+    const visible  = optState.schemaVisible.length;
+    const selected = optState.schemaVisible.filter(u => optState.schemaSelected.has(u)).length;
+    cb.indeterminate = selected > 0 && selected < visible;
+    cb.checked       = visible > 0 && selected === visible;
+  }
+
+  // ─── SEO Generation (SSE) ──────────────────────────────────────────────────
+
+  async function generateSeoRecommendations() {
+    const selected = [...optState.seoSelected];
+    if (selected.length === 0) return;
+
+    showSeoState('generating');
+    const logEl = document.getElementById('seo-progress-log');
+    logEl.innerHTML = '';
+
+    const addLog = msg => {
+      const p = document.createElement('p');
+      p.style.margin = '0';
+      p.textContent  = msg;
+      logEl.appendChild(p);
+    };
+
+    addLog('Connecting to server…');
+
+    try {
+      const res = await fetch(`/api/optimize/${optState.crawlId}/seo/generate`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ urls: selected }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error || res.statusText);
+      }
+
+      const reader  = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer    = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          let data;
+          try { data = JSON.parse(line.slice(6)); } catch (_) { continue; }
+
+          if (data.type === 'log') {
+            addLog(data.message);
+          } else if (data.type === 'done') {
+            optState.seoProposals = data.proposals || [];
+            renderSeoResults();
+            showSeoState('results');
+            return;
+          } else if (data.type === 'error') {
+            throw new Error(data.message);
+          }
+        }
+      }
+      if (optState.seoProposals.length > 0) { renderSeoResults(); showSeoState('results'); }
+      else showSeoState('picker');
+    } catch (e) {
+      alert('SEO generation failed: ' + e.message);
+      showSeoState('picker');
+    }
+  }
+
+  function showSeoState(state) {
+    document.getElementById('seo-generating').classList.toggle('hidden',      state !== 'generating');
+    document.getElementById('seo-picker-section').classList.toggle('hidden',  state !== 'picker');
+    document.getElementById('seo-results-section').classList.toggle('hidden', state !== 'results');
+  }
+
+  function renderSeoResults() {
+    const proposals = optState.seoProposals;
+    document.getElementById('seo-results-sub').textContent =
+      `${proposals.length} page${proposals.length === 1 ? '' : 's'} optimized. Review and edit, then push to WordPress.`;
+
+    document.getElementById('seo-results-tbody').innerHTML = proposals.map((item, i) => {
+      const urlDisplay  = escapeHTML((item.url || '').replace(/^https?:\/\/[^\/]+/, '') || '/');
+      const page        = optState.pages.find(p => p.url === item.url) || {};
+      const propTitle   = escapeHTML(item.proposed_title || '');
+      const propMeta    = escapeHTML(item.proposed_meta  || '');
+      const titleLen    = (item.proposed_title || '').length;
+      const metaLen     = (item.proposed_meta  || '').length;
+      const titleCC     = titleLen === 0 ? '' : titleLen < 50 ? 'warn' : titleLen <= 60 ? 'ok' : 'bad';
+      const metaCC      = metaLen  === 0 ? '' : metaLen  < 150 ? 'warn' : metaLen  <= 160 ? 'ok' : 'bad';
+      const titleHint   = titleLen === 0 ? '' : titleLen < 50 ? ' — too short' : titleLen <= 60 ? ' — good' : ' — too long';
+      const metaHint    = metaLen  === 0 ? '' : metaLen  < 150 ? ' — too short' : metaLen  <= 160 ? ' — good' : ' — too long';
+      return `<tr data-idx="${i}">
+        <td class="seo-url" title="${escapeHTML(item.url || '')}">
+          <a href="${escapeHTML(item.url || '')}" target="_blank" rel="noopener">${urlDisplay}</a>
+        </td>
+        <td style="max-width:160px;">
+          <div style="font-size:12px;color:var(--text-secondary);">${escapeHTML(page.title || '')}</div>
+        </td>
+        <td style="min-width:180px;">
+          <textarea class="seo-field-box" rows="2" id="seo-title-${i}"
+            oninput="updateSeoCharCount(this, 50, 60, 'seo-title-cc-${i}')">${propTitle}</textarea>
+          <div class="char-count ${titleCC}" id="seo-title-cc-${i}">${titleLen} chars${titleHint}</div>
+        </td>
+        <td style="max-width:160px;">
+          <div style="font-size:12px;color:var(--text-secondary);">${escapeHTML(page.meta_description || '')}</div>
+        </td>
+        <td style="min-width:200px;">
+          <textarea class="seo-field-box" rows="3" id="seo-meta-${i}"
+            oninput="updateSeoCharCount(this, 150, 160, 'seo-meta-cc-${i}')">${propMeta}</textarea>
+          <div class="char-count ${metaCC}" id="seo-meta-cc-${i}">${metaLen} chars${metaHint}</div>
+        </td>
+        <td>
+          <button class="secondary" style="font-size:11px;padding:5px 10px;" onclick="pushSeoRow(${i})">Push</button>
+          <div class="push-status" id="seo-push-status-${i}"></div>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  function updateSeoCharCount(el, min, max, counterId) {
+    const len   = el.value.length;
+    const cc    = document.getElementById(counterId);
+    if (!cc) return;
+    const cls   = len === 0 ? '' : len < min ? 'warn' : len <= max ? 'ok' : 'bad';
+    const hint  = len === 0 ? '' : len < min ? ' — too short' : len <= max ? ' — good' : ' — too long';
+    cc.textContent = `${len} chars${hint}`;
+    cc.className   = 'char-count ' + cls;
+  }
+
+  async function pushAllSeo() {
+    const btn = document.getElementById('seo-push-all-btn');
+    btn.disabled    = true;
+    btn.textContent = 'Pushing…';
+
+    const items = optState.seoProposals.map((item, i) => ({
+      url:   item.url,
+      title: document.getElementById(`seo-title-${i}`)?.value.trim() || null,
+      meta:  document.getElementById(`seo-meta-${i}`)?.value.trim()  || null,
+    })).filter(it => it.title || it.meta);
+
+    if (items.length === 0) {
+      btn.disabled = false; btn.textContent = 'Push all to WordPress'; return;
+    }
+
+    try {
+      const res  = await fetch(`/api/optimize/${optState.crawlId}/seo/push`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+
+      (data.results || []).forEach(r => {
+        const idx = optState.seoProposals.findIndex(p => p.url === r.url);
+        if (idx < 0) return;
+        const el = document.getElementById(`seo-push-status-${idx}`);
+        if (!el) return;
+        el.textContent = r.ok ? 'Pushed ✓' : ('Error: ' + r.error);
+        el.className   = 'push-status ' + (r.ok ? 'ok' : 'err');
+      });
+    } catch (e) {
+      alert('Push failed: ' + e.message);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Push all to WordPress';
+    }
+  }
+
+  async function pushSeoRow(idx) {
+    const item = optState.seoProposals[idx];
+    if (!item) return;
+
+    const title    = document.getElementById(`seo-title-${idx}`)?.value.trim() || null;
+    const meta     = document.getElementById(`seo-meta-${idx}`)?.value.trim()  || null;
+    const statusEl = document.getElementById(`seo-push-status-${idx}`);
+
+    if (statusEl) { statusEl.textContent = 'Pushing…'; statusEl.className = 'push-status'; }
+
+    try {
+      const res  = await fetch(`/api/optimize/${optState.crawlId}/seo/push`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: [{ url: item.url, title, meta }] }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+
+      const r = (data.results || [])[0];
+      if (statusEl) {
+        statusEl.textContent = r && r.ok ? 'Pushed ✓' : ('Error: ' + (r && r.error || 'unknown'));
+        statusEl.className   = 'push-status ' + (r && r.ok ? 'ok' : 'err');
+      }
+    } catch (e) {
+      if (statusEl) { statusEl.textContent = 'Error: ' + e.message; statusEl.className = 'push-status err'; }
+    }
+  }
+
+  // ─── Schema Scan + Analyze (SSE) ───────────────────────────────────────────
+
+  async function runSchemaScanAnalyze() {
+    const selected = [...optState.schemaSelected];
+    if (selected.length === 0) return;
+
+    showSchemaState('generating');
+    const logEl = document.getElementById('schema-progress-log');
+    logEl.innerHTML = '';
+
+    const addLog = msg => {
+      const p = document.createElement('p');
+      p.style.margin = '0';
+      p.textContent  = msg;
+      logEl.appendChild(p);
+    };
+
+    addLog('Connecting to server…');
+
+    try {
+      const res = await fetch(`/api/optimize/${optState.crawlId}/schema/scan-analyze`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ urls: selected }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error || res.statusText);
+      }
+
+      const reader  = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer    = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          let data;
+          try { data = JSON.parse(line.slice(6)); } catch (_) { continue; }
+
+          if (data.type === 'log') {
+            addLog(data.message);
+          } else if (data.type === 'done') {
+            optState.schemaProposals = data.proposals || [];
+            renderSchemaProposals();
+            showSchemaState('results');
+            return;
+          } else if (data.type === 'error') {
+            throw new Error(data.message);
+          }
+        }
+      }
+      if (optState.schemaProposals.length > 0) { renderSchemaProposals(); showSchemaState('results'); }
+      else showSchemaState('picker');
+    } catch (e) {
+      alert('Schema scan failed: ' + e.message);
+      showSchemaState('picker');
+    }
+  }
+
+  function showSchemaState(state) {
+    document.getElementById('schema-generating').classList.toggle('hidden',      state !== 'generating');
+    document.getElementById('schema-picker-section').classList.toggle('hidden',  state !== 'picker');
+    document.getElementById('schema-results-section').classList.toggle('hidden', state !== 'results');
+  }
+
+  function renderSchemaProposals() {
+    const proposals = optState.schemaProposals;
+    const total     = proposals.reduce((acc, p) => acc + (p.schemas || []).length, 0);
+    document.getElementById('schema-results-sub').textContent =
+      `${proposals.length} page${proposals.length === 1 ? '' : 's'} · ${total} schema${total === 1 ? '' : 's'} proposed. Review JSON, then push to WordPress.`;
+
+    document.getElementById('schema-proposals-list').innerHTML = proposals.map((item, pi) => {
+      const urlDisplay  = escapeHTML((item.url || '').replace(/^https?:\/\/[^\/]+/, '') || '/');
+      const schemas     = item.schemas || [];
+      const noPost      = !item.post_id;
+
+      const schemaItems = schemas.map((s, si) => {
+        const json = JSON.stringify(s.schema, null, 2);
+        return `<div class="schema-item">
+          <div class="schema-item-header">
+            <span class="schema-type-badge">${escapeHTML(s.schema_type || '')}</span>
+            <span class="schema-reason">${escapeHTML(s.reason || '')}</span>
+            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+              <button class="secondary" style="font-size:11px;padding:5px 10px;"
+                onclick="pushSchemaItem(${pi}, ${si})"${noPost ? ' disabled title="No WP post found"' : ''}>Push</button>
+              <div class="push-status" id="schema-push-status-${pi}-${si}"></div>
+            </div>
+          </div>
+          <textarea class="schema-json-area" rows="8"
+            id="schema-json-${pi}-${si}">${escapeHTML(json)}</textarea>
+        </div>`;
+      }).join('');
+
+      return `<div class="schema-page-card">
+        <div class="schema-page-header" onclick="this.nextElementSibling.classList.toggle('open')">
+          <span class="schema-page-url">${urlDisplay}</span>
+          <span style="font-size:12px;color:var(--text-secondary);font-family:Barlow,sans-serif;">
+            ${schemas.length} schema${schemas.length === 1 ? '' : 's'}${noPost ? ' · no WP post found' : ''}
+          </span>
+        </div>
+        <div class="schema-page-body open">${schemaItems}</div>
+      </div>`;
+    }).join('');
+  }
+
+  async function pushAllSchemas() {
+    const btn = document.getElementById('schema-push-all-btn');
+    btn.disabled    = true;
+    btn.textContent = 'Pushing…';
+
+    const items = [];
+    optState.schemaProposals.forEach((item, pi) => {
+      if (!item.post_id) return;
+      (item.schemas || []).forEach((s, si) => {
+        const ta = document.getElementById(`schema-json-${pi}-${si}`);
+        let schema;
+        try { schema = JSON.parse(ta ? ta.value : JSON.stringify(s.schema)); } catch (_) { return; }
+        items.push({ url: item.url, postId: item.post_id, schemaType: s.schema_type, schema });
+      });
+    });
+
+    if (items.length === 0) {
+      alert('No schemas with a resolved WordPress post ID. Ensure the MMW plugin is installed and URLs match WP posts.');
+      btn.disabled = false; btn.textContent = 'Push all to WordPress'; return;
+    }
+
+    try {
+      const res  = await fetch(`/api/optimize/${optState.crawlId}/schema/push`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+
+      (data.results || []).forEach(r => {
+        const pi = optState.schemaProposals.findIndex(p => p.url === r.url);
+        if (pi < 0) return;
+        const si = (optState.schemaProposals[pi].schemas || []).findIndex(s => s.schema_type === r.schemaType);
+        if (si < 0) return;
+        const el = document.getElementById(`schema-push-status-${pi}-${si}`);
+        if (!el) return;
+        el.textContent = r.ok ? 'Pushed ✓' : ('Error: ' + r.error);
+        el.className   = 'push-status ' + (r.ok ? 'ok' : 'err');
+      });
+    } catch (e) {
+      alert('Push failed: ' + e.message);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Push all to WordPress';
+    }
+  }
+
+  async function pushSchemaItem(pi, si) {
+    const item   = optState.schemaProposals[pi];
+    const schema = item && item.schemas && item.schemas[si];
+    if (!item || !schema) return;
+    if (!item.post_id) { alert('This page has no resolved WordPress post ID.'); return; }
+
+    const ta = document.getElementById(`schema-json-${pi}-${si}`);
+    let parsed;
+    try   { parsed = JSON.parse(ta ? ta.value : JSON.stringify(schema.schema)); }
+    catch (_) { alert('Invalid JSON — please fix before pushing.'); return; }
+
+    const statusEl = document.getElementById(`schema-push-status-${pi}-${si}`);
+    if (statusEl) { statusEl.textContent = 'Pushing…'; statusEl.className = 'push-status'; }
+
+    try {
+      const res  = await fetch(`/api/optimize/${optState.crawlId}/schema/push`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: [{ url: item.url, postId: item.post_id, schemaType: schema.schema_type, schema: parsed }] }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+
+      const r = (data.results || [])[0];
+      if (statusEl) {
+        statusEl.textContent = r && r.ok ? 'Pushed ✓' : ('Error: ' + (r && r.error || 'unknown'));
+        statusEl.className   = 'push-status ' + (r && r.ok ? 'ok' : 'err');
+      }
+    } catch (e) {
+      if (statusEl) { statusEl.textContent = 'Error: ' + e.message; statusEl.className = 'push-status err'; }
     }
   }
 

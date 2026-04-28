@@ -24,13 +24,19 @@ const path    = require('path');
 
 const JSZip  = require('jszip');
 
-const engine       = require('./crawl/engine');
-const store        = require('./crawl/store');
-const jobs         = require('./jobs');
-const audit        = require('./analyzers/audit');
-const scout        = require('./analyzers/scout');
-const voice        = require('./analyzers/voice');
+const engine        = require('./crawl/engine');
+const store         = require('./crawl/store');
+const jobs          = require('./jobs');
+const audit         = require('./analyzers/audit');
+const scout         = require('./analyzers/scout');
+const voice         = require('./analyzers/voice');
+const schemaAnalyzer = require('./analyzers/schema');
 const brandVoiceApi = require('./api/brand-voice');
+const wp            = require('./lib/wp');
+
+const Anthropic = require('@anthropic-ai/sdk');
+const { SYSTEM_PROMPT: SEO_SYSTEM,       buildSeoUserMessage }    = require('./prompts/seo-optimize');
+const { SYSTEM_PROMPT: SCHEMA_SYSTEM,    buildSchemaUserMessage }  = require('./prompts/schema-gap');
 
 const app  = express();
 const PORT = parseInt(process.env.PORT, 10) || 3000;
@@ -385,6 +391,374 @@ app.patch('/api/voice/:clientId', async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     console.error('[voice patch] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Optimize tab ────────────────────────────────────────────────────────────
+// WordPress connection + SEO field push + Schema scan/generate/push.
+// All write operations go through the MMW Plugin installed on the client WP site.
+
+// Helper: resolve crawl then get the full client record (including WP credentials)
+async function resolveCrawlAndClient(crawlIdOrLatest) {
+  const crawl = await resolveCrawl(crawlIdOrLatest);
+  if (!crawl) return { crawl: null, client: null };
+  const client = await store.getClientById(crawl.client_id);
+  return { crawl, client };
+}
+
+// Helper: stream SSE emitter
+function sseEmitter(res) {
+  res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
+  return (type, data) => { try { res.write(`data: ${JSON.stringify({ type, ...data })}\n\n`); } catch (_) {} };
+}
+
+// GET /api/optimize/:crawlId/connection — return WP credentials (password redacted) for UI
+app.get('/api/optimize/:crawlId/connection', async (req, res) => {
+  try {
+    const { crawl, client } = await resolveCrawlAndClient(req.params.crawlId);
+    if (!crawl) return res.status(404).json({ error: 'Crawl not found' });
+    const hasCredentials = !!(client && client.wp_url && client.wp_username && client.wp_app_password);
+    res.json({
+      clientId:       client ? client.id : null,
+      clientName:     client ? client.name : null,
+      wp_url:         (client && client.wp_url)      || '',
+      wp_username:    (client && client.wp_username)  || '',
+      has_password:   !!(client && client.wp_app_password),
+      hasCredentials,
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/optimize/:crawlId/connection — save WP credentials
+app.post('/api/optimize/:crawlId/connection', async (req, res) => {
+  try {
+    const { crawl, client } = await resolveCrawlAndClient(req.params.crawlId);
+    if (!crawl) return res.status(404).json({ error: 'Crawl not found' });
+    const { wp_url, wp_username, wp_app_password } = req.body || {};
+    await store.updateClientWpCredentials(client.id, {
+      wpUrl:         wp_url         || null,
+      wpUsername:    wp_username    || null,
+      wpAppPassword: wp_app_password || null,
+    });
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/optimize/:crawlId/ping — test WP connection + plugin
+app.post('/api/optimize/:crawlId/ping', async (req, res) => {
+  try {
+    const { crawl, client } = await resolveCrawlAndClient(req.params.crawlId);
+    if (!crawl) return res.status(404).json({ error: 'Crawl not found' });
+    if (!client || !client.wp_url || !client.wp_username || !client.wp_app_password) {
+      return res.status(400).json({ error: 'WordPress credentials not configured' });
+    }
+    const result = await wp.ping(client.wp_url, client.wp_username, client.wp_app_password);
+    res.json(result);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+// GET /api/optimize/plugin/download — serve the plugin ZIP
+app.get('/api/optimize/plugin/download', async (req, res) => {
+  try {
+    const fs   = require('fs');
+    const path = require('path');
+    const phpSrc = fs.readFileSync(
+      path.join(__dirname, 'wordpress', 'mmw-plugin', 'mmw-plugin.php'), 'utf8'
+    );
+    const zip = new JSZip();
+    zip.folder('mmw-plugin').file('mmw-plugin.php', phpSrc);
+    const buf = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', 'attachment; filename="mmw-plugin.zip"');
+    res.send(buf);
+  } catch (err) {
+    console.error('[plugin download] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── SEO optimization ─────────────────────────────────────────────────────────
+// POST /api/optimize/:crawlId/seo/generate — SSE: Claude drafts title + meta for selected pages
+app.post('/api/optimize/:crawlId/seo/generate', async (req, res) => {
+  const { urls } = req.body || {};
+  if (!Array.isArray(urls) || urls.length === 0) {
+    return res.status(400).json({ error: 'urls array is required' });
+  }
+
+  let crawl, client;
+  try {
+    ({ crawl, client } = await resolveCrawlAndClient(req.params.crawlId));
+    if (!crawl) return res.status(404).json({ error: 'Crawl not found' });
+  } catch (err) { return res.status(500).json({ error: err.message }); }
+
+  const emit = sseEmitter(res);
+
+  try {
+    emit('log', { message: 'Fetching page data...' });
+
+    const allPages = await store.getCrawlPages(crawl.id);
+    const urlSet   = new Set(urls);
+    const selected = allPages.filter(p => urlSet.has(p.url));
+
+    if (selected.length === 0) {
+      emit('error', { message: 'No matching pages found for the provided URLs.' });
+      return res.end();
+    }
+
+    // Fetch brand voice for this client if available (enriches the prompt)
+    const bv          = await store.getBrandVoiceForCrawl(crawl.id).catch(() => null);
+    const voiceSummary = bv && bv.profile && bv.profile.summary_paragraph || null;
+
+    const anthropic  = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const BATCH_SIZE = 10;
+    const proposals  = [];
+
+    for (let i = 0; i < selected.length; i += BATCH_SIZE) {
+      const batch = selected.slice(i, i + BATCH_SIZE);
+      emit('log', { message: `Optimizing pages ${i + 1}–${Math.min(i + BATCH_SIZE, selected.length)} of ${selected.length}...` });
+
+      const userContent = buildSeoUserMessage(batch, voiceSummary);
+      let fullText = '';
+
+      const stream = anthropic.messages.stream({
+        model:      'claude-opus-4-7',
+        max_tokens: 4096,
+        thinking:   { type: 'adaptive' },
+        system: [{ type: 'text', text: SEO_SYSTEM, cache_control: { type: 'ephemeral' } }],
+        messages: [{ role: 'user', content: userContent }],
+      });
+
+      for await (const event of stream) {
+        if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+          fullText += event.delta.text;
+        }
+      }
+
+      const cleaned = fullText.trim().replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+      let batchResults;
+      try { batchResults = JSON.parse(cleaned); } catch (_) {
+        emit('log', { message: `Warning: could not parse batch ${Math.floor(i / BATCH_SIZE) + 1} response — skipping.` });
+        continue;
+      }
+      if (Array.isArray(batchResults)) proposals.push(...batchResults);
+    }
+
+    emit('done', { proposals });
+  } catch (err) {
+    console.error('[seo generate] error:', err);
+    emit('error', { message: err.message });
+  }
+  res.end();
+});
+
+// POST /api/optimize/:crawlId/seo/push — push SEO fields to WordPress
+app.post('/api/optimize/:crawlId/seo/push', async (req, res) => {
+  const { items } = req.body || {}; // [{ url, postId, title, meta }]
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'items array is required' });
+  }
+  try {
+    const { crawl, client } = await resolveCrawlAndClient(req.params.crawlId);
+    if (!crawl) return res.status(404).json({ error: 'Crawl not found' });
+    if (!client || !client.wp_url || !client.wp_username || !client.wp_app_password) {
+      return res.status(400).json({ error: 'WordPress credentials not configured' });
+    }
+
+    // Resolve postIds for any items missing them (SEO generate doesn't do WP lookup)
+    const needsLookup = items.filter(it => !it.postId && it.url);
+    if (needsLookup.length > 0) {
+      const lookupResults = await wp.lookupUrls(
+        client.wp_url, client.wp_username, client.wp_app_password,
+        needsLookup.map(it => it.url)
+      ).catch(() => []);
+      const pidMap = {};
+      for (const r of lookupResults) { if (r.found) pidMap[r.url] = r.post_id; }
+      for (const item of items) { if (!item.postId) item.postId = pidMap[item.url] || null; }
+    }
+
+    const results = [];
+    for (const item of items) {
+      if (!item.postId) {
+        results.push({ url: item.url, ok: false, error: 'Could not resolve URL to a WordPress post ID. Ensure the MMW plugin is installed.' });
+        continue;
+      }
+      try {
+        const r = await wp.writeSeoMeta(
+          client.wp_url, client.wp_username, client.wp_app_password,
+          { postId: item.postId, title: item.title || null, description: item.meta || null }
+        );
+        results.push({ url: item.url, ok: true, updated: r.updated });
+      } catch (err) {
+        results.push({ url: item.url, ok: false, error: err.message });
+      }
+    }
+    res.json({ results });
+  } catch (err) {
+    console.error('[seo push] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Schema scan + analyze ────────────────────────────────────────────────────
+// POST /api/optimize/:crawlId/schema/scan-analyze — SSE: scan existing schemas
+//   via WP plugin, then Claude identifies gaps + generates JSON-LD.
+app.post('/api/optimize/:crawlId/schema/scan-analyze', async (req, res) => {
+  const { urls } = req.body || {};
+  if (!Array.isArray(urls) || urls.length === 0) {
+    return res.status(400).json({ error: 'urls array is required' });
+  }
+
+  let crawl, client;
+  try {
+    ({ crawl, client } = await resolveCrawlAndClient(req.params.crawlId));
+    if (!crawl) return res.status(404).json({ error: 'Crawl not found' });
+    if (!client || !client.wp_url || !client.wp_username || !client.wp_app_password) {
+      return res.status(400).json({ error: 'WordPress credentials not configured for this client' });
+    }
+  } catch (err) { return res.status(500).json({ error: err.message }); }
+
+  const emit    = sseEmitter(res);
+  const siteUrl = client.wp_url;
+
+  try {
+    // 1. Fetch full page data
+    emit('log', { message: 'Fetching page data from database...' });
+    const allPages = await store.getCrawlPages(crawl.id);
+    const urlSet   = new Set(urls);
+    const selected = allPages.filter(p => urlSet.has(p.url));
+    if (selected.length === 0) {
+      emit('error', { message: 'No matching pages found.' }); return res.end();
+    }
+
+    // 2. Bulk URL → post ID lookup
+    emit('log', { message: `Resolving ${selected.length} URLs to WordPress post IDs...` });
+    const lookupResults = await wp.lookupUrls(
+      siteUrl, client.wp_username, client.wp_app_password,
+      selected.map(p => p.url)
+    );
+    const postIdMap = {};
+    let notFound = 0;
+    for (const r of lookupResults) {
+      if (r.found) postIdMap[r.url] = r.post_id;
+      else notFound++;
+    }
+    if (notFound > 0) emit('log', { message: `${notFound} URL(s) could not be matched to a WordPress post — they will be skipped for schema push but still analyzed.` });
+
+    // 3. Bulk schema scan via WP plugin
+    const foundPostIds = Object.values(postIdMap);
+    const scanMap = {}; // url → { post_id, schemas, existing_types }
+    if (foundPostIds.length > 0) {
+      emit('log', { message: `Scanning existing schemas on ${foundPostIds.length} posts...` });
+      const scanResults = await wp.getSchemasBulk(
+        siteUrl, client.wp_username, client.wp_app_password, foundPostIds
+      );
+      const postIdToUrl = {};
+      for (const [url, pid] of Object.entries(postIdMap)) postIdToUrl[pid] = url;
+      for (const r of scanResults) {
+        const url = postIdToUrl[r.post_id];
+        if (url) scanMap[url] = { post_id: r.post_id, schemas: r.schemas,
+          existing_types: schemaAnalyzer.extractExistingTypes(r.schemas) };
+      }
+    }
+    emit('log', { message: 'Schema scan complete. Starting gap analysis with Claude...' });
+
+    // 4. Prepare page context + generate BreadcrumbList deterministically
+    const anthropic    = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const clientName   = (client.clients && client.clients.name) || client.name || '';
+    const BATCH_SIZE   = 5;
+    const allProposals = [];
+
+    for (let i = 0; i < selected.length; i += BATCH_SIZE) {
+      const batch = selected.slice(i, i + BATCH_SIZE);
+      emit('log', { message: `Analyzing schemas for pages ${i + 1}–${Math.min(i + BATCH_SIZE, selected.length)} of ${selected.length}...` });
+
+      const contextPages = batch.map(p =>
+        schemaAnalyzer.preparePageContext(p, siteUrl, scanMap[p.url])
+      );
+
+      // Claude-based gap analysis
+      const userContent = buildSchemaUserMessage(contextPages, clientName);
+      let fullText = '';
+
+      const stream = anthropic.messages.stream({
+        model:      'claude-opus-4-7',
+        max_tokens: 8192,
+        thinking:   { type: 'adaptive' },
+        system: [{ type: 'text', text: SCHEMA_SYSTEM, cache_control: { type: 'ephemeral' } }],
+        messages: [{ role: 'user', content: userContent }],
+      });
+
+      for await (const event of stream) {
+        if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+          fullText += event.delta.text;
+        }
+      }
+
+      const cleaned = fullText.trim().replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+      let batchResults = [];
+      try { batchResults = JSON.parse(cleaned); } catch (_) {
+        emit('log', { message: `Warning: could not parse schema batch ${Math.floor(i / BATCH_SIZE) + 1} — skipping.` });
+        continue;
+      }
+
+      // Inject deterministic BreadcrumbList for each page if not already present
+      for (let j = 0; j < batchResults.length; j++) {
+        const pageResult = batchResults[j] || {};
+        const pageUrl    = pageResult.url || contextPages[j].url;
+        const existing   = scanMap[pageUrl] ? scanMap[pageUrl].existing_types : [];
+
+        if (!existing.includes('BreadcrumbList')) {
+          const bc = schemaAnalyzer.buildBreadcrumb(pageUrl, siteUrl);
+          if (bc) {
+            if (!Array.isArray(pageResult.schemas)) pageResult.schemas = [];
+            pageResult.schemas.unshift({ schema_type: 'BreadcrumbList', reason: 'Standard breadcrumb navigation schema.', schema: bc });
+          }
+        }
+
+        // Attach post_id for push step
+        pageResult.post_id = postIdMap[pageUrl] || null;
+        pageResult.url     = pageUrl;
+        allProposals.push(pageResult);
+      }
+    }
+
+    emit('done', { proposals: allProposals });
+  } catch (err) {
+    console.error('[schema scan-analyze] error:', err);
+    emit('error', { message: err.message });
+  }
+  res.end();
+});
+
+// POST /api/optimize/:crawlId/schema/push — push approved schemas to WordPress
+app.post('/api/optimize/:crawlId/schema/push', async (req, res) => {
+  const { items } = req.body || {}; // [{ url, postId, schemaType, schema }]
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'items array is required' });
+  }
+  try {
+    const { crawl, client } = await resolveCrawlAndClient(req.params.crawlId);
+    if (!crawl) return res.status(404).json({ error: 'Crawl not found' });
+    if (!client || !client.wp_url || !client.wp_username || !client.wp_app_password) {
+      return res.status(400).json({ error: 'WordPress credentials not configured' });
+    }
+
+    const results = [];
+    for (const item of items) {
+      try {
+        const r = await wp.deploySchema(
+          client.wp_url, client.wp_username, client.wp_app_password,
+          { postId: item.postId, schemaType: item.schemaType, schema: item.schema }
+        );
+        results.push({ url: item.url, schemaType: item.schemaType, ok: true, meta_key: r.meta_key });
+      } catch (err) {
+        results.push({ url: item.url, schemaType: item.schemaType, ok: false, error: err.message });
+      }
+    }
+    res.json({ results });
+  } catch (err) {
+    console.error('[schema push] error:', err);
     res.status(500).json({ error: err.message });
   }
 });

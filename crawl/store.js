@@ -33,6 +33,36 @@ function getClient() {
   return supabase;
 }
 
+// ─── Clients (extended) ───────────────────────────────────────────────────────
+
+async function getClientById(clientId) {
+  const sb = getClient();
+  const { data, error } = await sb
+    .from('clients')
+    .select('*')
+    .eq('id', clientId)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Save or update WordPress credentials for a client.
+ * Passing null for a field leaves the existing value unchanged.
+ */
+async function updateClientWpCredentials(clientId, { wpUrl, wpUsername, wpAppPassword }) {
+  const sb      = getClient();
+  const updates = {};
+  if (wpUrl         != null) updates.wp_url          = wpUrl;
+  if (wpUsername    != null) updates.wp_username     = wpUsername;
+  if (wpAppPassword != null) updates.wp_app_password = wpAppPassword;
+
+  if (Object.keys(updates).length === 0) return;
+
+  const { error } = await sb.from('clients').update(updates).eq('id', clientId);
+  if (error) throw error;
+}
+
 // ─── Domain helpers ──────────────────────────────────────────────────────────
 
 function normalizeDomain(input) {
@@ -406,6 +436,8 @@ async function listFinishedCrawls(limit) {
 module.exports = {
   getClient,
   normalizeDomain,
+  getClientById,
+  updateClientWpCredentials,
   upsertClient,
   createCrawl,
   persistPage,

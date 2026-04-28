@@ -25,9 +25,9 @@ The merge:
 
 ---
 
-## The four-phase build plan
+## The five-phase build plan
 
-The project is being built in four phases. Each phase is independently shippable — when a phase finishes, the tool is still useful, just with fewer features. All four phases are done.
+The project was built in five phases. Each phase is independently shippable — when a phase finishes, the tool is still useful, just with fewer features. All five phases are done.
 
 ### Phase 1 — Crawl service + skeleton (DONE)
 
@@ -178,7 +178,7 @@ Phases 1-3 ship without auth. The tool is internal, the URL isn't public, and ad
 server.js                 — Express app, route definitions only, no business logic
 jobs.js                   — In-memory active-crawl state (SSE clients, cancel flag, replay buffer)
 package.json
-.env.example              — Template for required env vars (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, PORT)
+.env.example              — Template for required env vars
 
 crawl/
   engine.js               — Crawler (sitemap discovery, fetching, redirect handling, concurrency)
@@ -189,27 +189,38 @@ analyzers/
   audit.js                — Phase 2: stats, issue flagging, cannibalization detection, CSV builder
   scout.js                — Phase 3: default-check heuristic, Markdown content block formatting, zip manifest
   voice.js                — Phase 4: Brand Voice analysis orchestration (Claude API streaming)
+  schema.js               — Phase 5: page type detection, BreadcrumbList builder, context prep
 
 prompts/
   voice-analysis.js       — Phase 4: system prompt + buildUserMessage for Claude voice analysis
+  seo-optimize.js         — Phase 5: system prompt + buildSeoUserMessage for title/meta optimization
+  schema-gap.js           — Phase 5: system prompt + buildSchemaUserMessage for schema gap analysis
 
 api/
   brand-voice.js          — Phase 4: authenticated cross-tool GET endpoints (X-MMW-API-Key)
 
+lib/
+  wp.js                   — Phase 5: WordPress REST API client (ping, lookup, schema read/write, seo-meta)
+
+wordpress/
+  mmw-plugin/
+    mmw-plugin.php        — Phase 5: installable WP plugin (mmw/v1 REST namespace, Rank Math schema deploy)
+
 migrations/
   001_initial_schema.sql  — clients, crawls, crawl_pages, brand_voices tables + trigger
+  002_wp_credentials.sql  — adds wp_url, wp_username, wp_app_password to clients table
 
 public/
-  index.html              — Single-page UI with four tabs (Crawl active, Audit active, Scout TODO, Voice TODO)
+  index.html              — Single-page UI with five tabs (Crawl, Audit, Scout, Brand Voice, Optimize)
 ```
 
 ---
 
 ## Database schema
 
-Run `migrations/001_initial_schema.sql` in the Supabase SQL editor for this project. The schema is:
+Run both migration files (in order) in the Supabase SQL editor for this project.
 
-- `clients` — `id, domain, name, created_at`. Unique index on `domain`. Domains are stored normalized (no protocol, no www, no path).
+- `clients` — `id, domain, name, wp_url, wp_username, wp_app_password, created_at`. Unique index on `domain`. Domains are stored normalized (no protocol, no www, no path). WP credentials added in migration 002.
 - `crawls` — `id, client_id, target_url, status, is_latest, page_count, error_count, sitemap_seeds, avg_word_count, settings (JSONB), error_message, started_at, finished_at`. Status is one of `queued | running | done | error | cancelled`. The trigger `enforce_single_latest_crawl` ensures only one crawl per client has `is_latest = true`.
 - `crawl_pages` — `id, crawl_id, url, status_code, redirect_to, title, title_length, h1, h2_count, h2_sample, meta_description, meta_desc_present, word_count, inlinks, indexability, canonical_url, canonical_match, has_cta, headings (JSONB), extracted_body, extracted_text, fetched_at`. Foreign key to `crawls(id)` with `ON DELETE CASCADE`. When a new crawl finalizes, page rows from previous crawls for that client are deleted.
 - `brand_voices` — `id, client_id, crawl_id, source_urls (JSONB), profile (JSONB), human_edited, generated_at, updated_at`. Unique index on `client_id` (one profile per client; regen overwrites).
@@ -280,6 +291,16 @@ Requires `X-MMW-API-Key: <MMW_INTERNAL_API_KEY>` header.
 - `GET /api/brand-voice/:clientId` — returns full `brand_voices` row with client info joined.
 - `GET /api/brand-voice/by-domain/:domain` — same, looked up by client domain.
 
+### Optimize (phase 5 — WordPress push)
+- `GET /api/optimize/:crawlId/connection` — returns WP credentials for the client (password presence indicated by `has_password`, never returned in plaintext).
+- `POST /api/optimize/:crawlId/connection` — body: `{ wp_url?, wp_username?, wp_app_password? }`. Saves WP credentials for the crawl's client.
+- `POST /api/optimize/:crawlId/ping` — tests the WordPress connection and plugin. Returns `{ ok, version, site, name }` or an error.
+- `GET /api/optimize/plugin/download` — streams the MMW plugin as a `.zip` download.
+- `POST /api/optimize/:crawlId/seo/generate` — body: `{ urls: [...] }`. SSE stream. Emits `log { message }`, `done { proposals: [{url, proposed_title, proposed_meta}] }`, `error { message }`.
+- `POST /api/optimize/:crawlId/seo/push` — body: `{ items: [{url, title?, meta?}] }`. Resolves missing post IDs via WP URL lookup, then pushes SEO fields. Returns `{ results: [{url, ok, updated?, error?}] }`.
+- `POST /api/optimize/:crawlId/schema/scan-analyze` — body: `{ urls: [...] }`. SSE stream. Emits `log`, `done { proposals: [{url, post_id, schemas: [{schema_type, reason, schema}]}] }`, `error`.
+- `POST /api/optimize/:crawlId/schema/push` — body: `{ items: [{url, postId, schemaType, schema}] }`. Returns `{ results: [{url, schemaType, ok, meta_key?, error?}] }`.
+
 ---
 
 ## Conventions and patterns to follow
@@ -325,4 +346,47 @@ If you need the legacy source for reference — for example, to see the exact Ma
 - **MMW Press Release Writer** (`mmw-press-release.onrender.com`). Two-mode tool (custom AI-generated + Candela device templates). Will consume Brand Voice profiles in phase 4 for the custom mode.
 - **MMW Tools Hub** (`mmw-hub.html`). Standalone HTML dashboard listing all tools. When this app goes live, add a card linking to it.
 
-The future **Blog Writer** and **SEO Optimizer** tools (still on the hub as "coming soon") will also consume Brand Voice once phase 4 ships.
+The future **Blog Writer** tool (still on the hub as "coming soon") will also consume Brand Voice.
+
+---
+
+### Phase 5 — Optimize tab: SEO + Schema push to WordPress (DONE)
+
+**Goal:** Close the loop between analysis and action. After auditing a site and generating a brand voice profile, the team should be able to draft optimized SEO fields (title + meta description) and schema markup with Claude, then push them directly to the client's WordPress site without leaving the tool.
+
+**What was delivered:**
+
+**WordPress plugin (`wordpress/mmw-plugin/mmw-plugin.php`):**
+A standard installable WordPress plugin named "Medical Marketing Whiz". Registered under the `mmw/v1` REST namespace, authenticated via core WordPress Application Passwords (WP 5.6+, no third-party auth plugin required).
+- `GET /ping` — health check returning version, site URL, site name
+- `POST /lookup-url` / `POST /lookup-urls` — resolve page URLs to WordPress post IDs
+- `GET /schema/{post_id}` / `POST /schemas/bulk` — read existing Rank Math schemas (all `rank_math_schema_*` meta keys, with `maybe_unserialize()`)
+- `POST /schema` — deploy a schema. Decodes JSON → PHP array, adds the required Rank Math `metadata` envelope, calls `update_post_meta()` directly (NEVER `json_encode`). Uses a deterministic meta key `rank_math_schema_mmw_{md5(type+postId)[:8]}` so re-deploying the same schema type overwrites rather than duplicates.
+- `DELETE /schema/{post_id}` — deletes only `rank_math_schema_mmw_*` keys (never touches native Rank Math schemas)
+- `POST /seo-meta` — writes `rank_math_title`, `rank_math_description`, `rank_math_focus_keyword`
+
+Plugin is distributed as a ZIP download from `/api/optimize/plugin/download` (built server-side with JSZip from the PHP source). Install via WP Admin → Plugins → Add New → Upload Plugin.
+
+**RankMath-only design:** Yoast is not supported. All client sites will use RankMath. The critical invariant: Rank Math stores custom schemas as PHP-serialized arrays in post meta, not JSON strings. The plugin handles this entirely — Node.js code always sends and receives plain JSON; PHP serialization is transparent.
+
+**WordPress API client (`lib/wp.js`):** Node 18+ built-in `fetch`-based client. Functions: `ping`, `lookupUrl`, `lookupUrls` (chunked at 100 URLs/request), `getSchemas`, `getSchemasBulk` (chunked at 50), `deploySchema`, `deleteSchemas`, `writeSeoMeta`. Distinguishes plugin-not-installed (404 + `rest_no_route`) from post-not-found (404, other code).
+
+**SEO Optimizer:**
+- Prompt (`prompts/seo-optimize.js`): system prompt for title (50-60 chars, pipe separator) + meta description (150-160 chars) optimization for medical marketing. Outputs `[{url, proposed_title, proposed_meta}]` JSON.
+- Server (`POST /api/optimize/:crawlId/seo/generate`): SSE stream. Fetches full page data, optionally enriches with brand voice summary, calls Claude (`claude-opus-4-7`, adaptive thinking, cache_control on system) in batches of 10. Emits `log`/`done`/`error` events.
+- Server (`POST /api/optimize/:crawlId/seo/push`): accepts `[{url, title, meta}]`. Resolves any missing post IDs via bulk WP URL lookup, then calls `writeSeoMeta` per item.
+
+**Schema Optimizer:**
+- Prompt (`prompts/schema-gap.js`): system prompt with detailed field guidance for healthcare schema types (MedicalBusiness, LocalBusiness, Service, FAQPage, MedicalWebPage, Person/MedicalProvider, BreadcrumbList). Outputs `[{url, schemas: [{schema_type, reason, schema}]}]` JSON.
+- Analyzer (`analyzers/schema.js`): pure functions — `detectPageType(url, siteUrl)` (homepage/service/about/blog_post/contact/legal/faq/provider/general), `buildBreadcrumb(url, siteUrl)` (deterministic BreadcrumbList from URL path, no Claude), `extractExistingTypes(schemasObj)`, `preparePageContext(page, siteUrl, scan)`.
+- Server (`POST /api/optimize/:crawlId/schema/scan-analyze`): SSE stream. Bulk URL→postId lookup, bulk schema scan, Claude gap analysis in batches of 5, deterministic BreadcrumbList injection (skipped if already present), `post_id` attached to each proposal for the push step.
+- Server (`POST /api/optimize/:crawlId/schema/push`): accepts `[{url, postId, schemaType, schema}]`. Calls `deploySchema` per item.
+
+**WP Credentials storage (`migrations/002_wp_credentials.sql`):** Adds `wp_url`, `wp_username`, `wp_app_password` TEXT columns to the `clients` table. Stored per-client in this tool's own Supabase project (not the blog engine's DB — one DB per tool). New store functions: `getClientById`, `updateClientWpCredentials`.
+
+**Optimize tab UI:**
+- WP Connection card: URL/username/password inputs, Test Connection (pings plugin, shows version), Save, Download Plugin button.
+- SEO sub-tab: page picker (same pattern as Voice/Scout — checkboxes, search, Select defaults/all/deselect, header checkbox with indeterminate state), Generate button (SSE with progress log), results table with editable title/meta textareas and character-count indicators (green 50-60/150-160, amber too-short, red too-long), per-row Push and Push all buttons.
+- Schema sub-tab: same picker pattern, Scan & Analyze button (SSE with progress log), accordion results cards per page with JSON-LD textareas (editable before push), per-schema Push and Push all buttons. Pages without a resolved WP post ID have push disabled.
+
+**New env var:** No new env vars. Phase 5 uses `ANTHROPIC_API_KEY` (already required since Phase 4) and the WP credentials stored per-client in Supabase.
