@@ -369,13 +369,168 @@
   .alert.error  { background: var(--red-bg); color: var(--red); border-color: #e8b4b4; }
   .alert.warn   { background: var(--amber-bg); color: var(--amber); border-color: #f5d08a; }
   .alert.success{ background: var(--green-light); color: var(--green-mid); border-color: var(--border-strong); }
+
+  /* ── AUDIT TAB ── */
+  .audit-toolbar {
+    display: flex; flex-wrap: wrap; gap: 12px;
+    align-items: center; justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .audit-context {
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .audit-context-domain {
+    font-family: 'Poppins', sans-serif; font-weight: 600;
+    color: var(--dark); font-size: 16px;
+  }
+  .audit-context-meta {
+    color: var(--text-muted); font-size: 12px;
+  }
+  .audit-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .crawl-select {
+    font-family: 'Barlow', sans-serif; font-size: 13px;
+    color: var(--dark); background: var(--white);
+    border: 1px solid var(--border-strong); border-radius: 8px;
+    padding: 8px 12px; cursor: pointer;
+    max-width: 360px;
+  }
+
+  /* Issue chips (clickable filters in stats grid) */
+  .stat.clickable { cursor: pointer; transition: all 0.15s ease; }
+  .stat.clickable:hover { border-color: var(--green); background: var(--green-light); }
+  .stat.clickable.active {
+    background: var(--green); border-color: var(--green-mid);
+  }
+  .stat.clickable.active .stat-label,
+  .stat.clickable.active .stat-value { color: var(--white); }
+  .stat.clickable[data-count="0"] { opacity: 0.55; cursor: default; }
+  .stat.clickable[data-count="0"]:hover { border-color: var(--border); background: var(--green-lighter); }
+
+  /* Filter row above table */
+  .filter-row {
+    display: flex; gap: 10px; flex-wrap: wrap;
+    align-items: center;
+    padding: 12px 0;
+    border-top: 1px solid var(--border);
+    margin-top: 8px;
+  }
+  .filter-row input[type="text"] { flex: 1; min-width: 220px; padding: 8px 12px; font-size: 13px; }
+  .filter-row select {
+    font-family: 'Barlow', sans-serif; font-size: 13px;
+    color: var(--dark); background: var(--white);
+    border: 1px solid var(--border-strong); border-radius: 8px;
+    padding: 8px 12px; cursor: pointer;
+  }
+  .filter-clear {
+    font-size: 12px; color: var(--green-mid); background: transparent;
+    border: none; cursor: pointer; padding: 4px 8px; font-weight: 600;
+  }
+  .filter-clear:hover { text-decoration: underline; }
+
+  /* Audit table */
+  .audit-table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-card);
+  }
+  .audit-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+  }
+  .audit-table thead th {
+    background: var(--green-lighter);
+    color: var(--text-secondary);
+    font-family: 'Barlow', sans-serif;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 10.5px;
+    text-align: left;
+    padding: 11px 12px;
+    border-bottom: 1px solid var(--border-strong);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+  }
+  .audit-table thead th:hover { color: var(--green-mid); }
+  .audit-table thead th .sort-arrow { color: var(--green); margin-left: 3px; }
+  .audit-table tbody td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--dark);
+    vertical-align: top;
+    max-width: 380px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .audit-table tbody tr:last-child td { border-bottom: none; }
+  .audit-table tbody tr:hover { background: var(--green-lighter); }
+  .audit-table .url-cell {
+    font-family: var(--mono); font-size: 11.5px;
+    max-width: 320px;
+  }
+  .audit-table .url-cell a { color: var(--dark-mid); text-decoration: none; }
+  .audit-table .url-cell a:hover { color: var(--green-mid); text-decoration: underline; }
+  .audit-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .audit-table .status-2xx { color: var(--green-mid); font-weight: 600; }
+  .audit-table .status-3xx { color: var(--amber); font-weight: 600; }
+  .audit-table .status-4xx, .audit-table .status-5xx { color: var(--red); font-weight: 600; }
+  .audit-table .status-0   { color: var(--text-muted); font-weight: 600; }
+
+  /* Issue badges */
+  .badge {
+    display: inline-block;
+    font-size: 9.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-right: 3px;
+    margin-bottom: 2px;
+    background: var(--green-light);
+    color: var(--green-mid);
+    border: 1px solid var(--border-strong);
+  }
+  .badge.warn  { background: var(--amber-bg); color: var(--amber); border-color: #f5d08a; }
+  .badge.error { background: var(--red-bg);   color: var(--red);   border-color: #e8b4b4; }
+
+  .audit-empty {
+    padding: 60px 24px; text-align: center; color: var(--text-muted);
+  }
+  .audit-empty h3 {
+    font-family: 'Poppins', sans-serif; font-weight: 600;
+    color: var(--dark); font-size: 16px; margin-bottom: 6px;
+  }
+
+  /* Cannibalization detail block */
+  .cannibal-block {
+    background: var(--amber-bg);
+    border: 1px solid #f5d08a;
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+  }
+  .cannibal-block h4 {
+    font-family: 'Poppins', sans-serif; font-size: 13px; font-weight: 600;
+    color: var(--amber); margin-bottom: 6px;
+  }
+  .cannibal-block ul { padding-left: 18px; margin: 0; }
+  .cannibal-block li { font-size: 12.5px; line-height: 1.7; }
+  .cannibal-block li a { color: var(--dark-mid); font-family: var(--mono); }
+
 </style>
 </head>
 <body>
 
 <nav>
   <div class="nav-title">MMW <span>Site Intelligence</span></div>
-  <div class="nav-badge">Phase 1 — Crawl</div>
+  <div class="nav-badge">Phase 2 — Audit</div>
 </nav>
 
 <main>
@@ -386,7 +541,7 @@
 
   <div class="tabs" role="tablist">
     <button class="tab active" data-tab="crawl" onclick="switchTab('crawl', this)">Crawl</button>
-    <button class="tab" data-tab="audit"  disabled title="Coming in phase 2">Audit <span class="tab-badge">Soon</span></button>
+    <button class="tab" data-tab="audit"  onclick="switchTab('audit', this)">Audit</button>
     <button class="tab" data-tab="scout"  disabled title="Coming in phase 3">Scout <span class="tab-badge">Soon</span></button>
     <button class="tab" data-tab="voice"  disabled title="Coming in phase 4">Brand Voice <span class="tab-badge">Soon</span></button>
   </div>
@@ -477,10 +632,99 @@
 
   <!-- ─── AUDIT / SCOUT / VOICE PLACEHOLDERS ───────────────────────────── -->
   <section class="tab-panel" id="panel-audit">
-    <div class="card placeholder">
-      <div class="placeholder-icon">⚙</div>
-      <h3>Audit — coming in phase 2</h3>
-      <p>SEO audit, content thinness, cannibalization checks, and CSV export. Will read from the latest crawl per client.</p>
+
+    <!-- Empty state (no crawls exist yet) -->
+    <div class="card audit-empty hidden" id="audit-empty">
+      <h3>No completed crawls yet</h3>
+      <p>Run a crawl from the Crawl tab to populate the audit view.</p>
+    </div>
+
+    <!-- Loading state -->
+    <div class="card audit-empty hidden" id="audit-loading">
+      <h3>Loading audit…</h3>
+    </div>
+
+    <!-- Main audit content -->
+    <div id="audit-main" class="hidden">
+
+      <div class="card">
+        <div class="audit-toolbar">
+          <div class="audit-context">
+            <div class="audit-context-domain" id="audit-domain">—</div>
+            <div class="audit-context-meta" id="audit-meta">—</div>
+          </div>
+          <div class="audit-actions">
+            <select class="crawl-select" id="audit-crawl-select" onchange="loadAudit(this.value)"></select>
+            <button class="secondary" onclick="downloadCSV()">Download CSV</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stats grid: status overview -->
+      <div class="card">
+        <div class="card-title">Overview</div>
+        <div class="card-sub">Click any non-zero issue to filter the table below.</div>
+        <div class="stats-grid">
+          <div class="stat"><div class="stat-label">Total pages</div><div class="stat-value" id="stat-total">0</div></div>
+          <div class="stat"><div class="stat-label">OK (2xx)</div><div class="stat-value green" id="stat-ok">0</div></div>
+          <div class="stat"><div class="stat-label">Redirects</div><div class="stat-value amber" id="stat-redirects">0</div></div>
+          <div class="stat"><div class="stat-label">Errors</div><div class="stat-value red" id="stat-errors-overview">0</div></div>
+          <div class="stat"><div class="stat-label">Indexable</div><div class="stat-value" id="stat-indexable">0</div></div>
+          <div class="stat"><div class="stat-label">Avg word count</div><div class="stat-value" id="stat-avgwords">0</div></div>
+        </div>
+      </div>
+
+      <!-- Stats grid: issues (clickable) -->
+      <div class="card">
+        <div class="card-title">Issues found</div>
+        <div class="card-sub">Each tile filters the inventory table below to those pages.</div>
+        <div class="stats-grid" id="issue-tiles">
+          <!-- Populated by renderIssueTiles() -->
+        </div>
+      </div>
+
+      <!-- Cannibalization detail (hidden if no clusters) -->
+      <div class="card hidden" id="cannibal-card">
+        <div class="card-title">Suspected cannibalization</div>
+        <div class="card-sub">Multiple pages targeting the same primary topic — review and consolidate or differentiate.</div>
+        <div id="cannibal-list"></div>
+      </div>
+
+      <!-- Inventory table -->
+      <div class="card">
+        <div class="card-title">Page inventory</div>
+        <div class="card-sub" id="inventory-sub">Showing all pages.</div>
+
+        <div class="filter-row">
+          <input type="text" id="filter-search" placeholder="Search by URL or title…" oninput="renderTable()">
+          <select id="filter-status" onchange="renderTable()">
+            <option value="">All statuses</option>
+            <option value="2xx">2xx (OK)</option>
+            <option value="3xx">3xx (redirect)</option>
+            <option value="4xx">4xx (client error)</option>
+            <option value="5xx">5xx (server error)</option>
+            <option value="0">Fetch failed</option>
+          </select>
+          <button class="filter-clear" onclick="clearFilters()" id="clear-filters" style="display:none;">Clear filters</button>
+        </div>
+
+        <div class="audit-table-wrap">
+          <table class="audit-table" id="audit-table">
+            <thead>
+              <tr>
+                <th data-sort="url">URL</th>
+                <th data-sort="status_code" class="num">Status</th>
+                <th data-sort="title">Title</th>
+                <th data-sort="word_count" class="num">Words</th>
+                <th data-sort="inlinks" class="num">Inlinks</th>
+                <th data-sort="indexability">Indexability</th>
+                <th>Issues</th>
+              </tr>
+            </thead>
+            <tbody id="audit-tbody"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </section>
   <section class="tab-panel" id="panel-scout">
@@ -513,6 +757,7 @@
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('panel-' + name).classList.add('active');
+    if (name === 'audit') initAuditTab();
   }
 
   // ─── Crawl flow ────────────────────────────────────────────────────────
@@ -680,6 +925,334 @@
   function escapeHTML(s) {
     return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // AUDIT TAB
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // Issue tile definitions — order matters (this is the display order in the grid)
+  const ISSUE_TILES = [
+    { key: 'thin',           label: 'Thin content',     flag: 'thin',           tone: 'amber' },
+    { key: 'titleMissing',   label: 'Title missing',    flag: 'title_missing',  tone: 'red'   },
+    { key: 'titleShort',     label: 'Title too short',  flag: 'title_short',    tone: 'amber' },
+    { key: 'titleLong',      label: 'Title too long',   flag: 'title_long',     tone: 'amber' },
+    { key: 'metaMissing',    label: 'Meta missing',     flag: 'meta_missing',   tone: 'red'   },
+    { key: 'metaShort',      label: 'Meta short',       flag: 'meta_short',     tone: 'amber' },
+    { key: 'h1Missing',      label: 'H1 missing',       flag: 'h1_missing',     tone: 'amber' },
+    { key: 'noCta',          label: 'No CTA',           flag: 'no_cta',         tone: 'amber' },
+    { key: 'canonicalOther', label: 'Canonical issue',  flag: 'canonical_other',tone: 'amber' },
+    { key: 'cannibalPages',  label: 'Cannibalization',  flag: 'cannibal',       tone: 'red'   },
+  ];
+
+  // Issue badge labels (short form for the table)
+  const ISSUE_BADGE_LABELS = {
+    'thin':            { label: 'Thin', tone: 'warn'  },
+    'title_missing':   { label: 'No Title', tone: 'error' },
+    'title_short':     { label: 'Title Short', tone: 'warn'  },
+    'title_long':      { label: 'Title Long', tone: 'warn'  },
+    'meta_missing':    { label: 'No Meta', tone: 'error' },
+    'meta_short':      { label: 'Meta Short', tone: 'warn'  },
+    'meta_long':       { label: 'Meta Long', tone: 'warn'  },
+    'h1_missing':      { label: 'No H1',  tone: 'warn'  },
+    'no_cta':          { label: 'No CTA', tone: 'warn'  },
+    'canonical_other': { label: 'Canonical', tone: 'warn'  },
+    'cannibal':        { label: 'Cannibal', tone: 'error' },
+    'http_error':      { label: 'HTTP Error', tone: 'error' },
+    'fetch_failed':    { label: 'Fetch Failed', tone: 'error' },
+    'redirect':        { label: 'Redirect', tone: '' },
+    'noindex':         { label: 'Noindex', tone: 'warn'  },
+  };
+
+  let auditState = {
+    initialized: false,
+    crawlId:     null,
+    crawl:       null,
+    summary:     null,
+    pages:       [],
+    cannibalClusters: [],
+    sortKey:     'word_count',
+    sortDir:     'asc',
+    filterFlag:  null,
+    filterClusterId: null,
+  };
+
+  async function initAuditTab() {
+    if (auditState.initialized) return;
+    auditState.initialized = true;
+    showAuditState('loading');
+
+    // Populate the crawl dropdown and load the most recent
+    try {
+      const res = await fetch('/api/crawls?limit=50');
+      const { crawls } = await res.json();
+      if (!crawls || crawls.length === 0) {
+        showAuditState('empty');
+        return;
+      }
+      populateCrawlSelect(crawls);
+      await loadAudit('latest');
+    } catch (e) {
+      showAuditState('empty');
+      console.error('Failed to load crawls list', e);
+    }
+  }
+
+  function populateCrawlSelect(crawls) {
+    const sel = document.getElementById('audit-crawl-select');
+    sel.innerHTML = '<option value="latest">Most recent crawl</option>';
+    crawls.forEach(c => {
+      const dom = c.clients && c.clients.domain || 'unknown';
+      const date = (c.finished_at || '').split('T')[0];
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = `${dom} — ${date} (${c.page_count} pages)`;
+      sel.appendChild(opt);
+    });
+  }
+
+  async function loadAudit(idOrLatest) {
+    showAuditState('loading');
+    try {
+      const res = await fetch('/api/audit/' + idOrLatest);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || res.statusText);
+      }
+      const data = await res.json();
+
+      auditState.crawl    = data.crawl;
+      auditState.crawlId  = data.crawl.id;
+      auditState.summary  = data.summary;
+      auditState.pages    = data.pages || [];
+      auditState.cannibalClusters = data.cannibalClusters || [];
+      auditState.filterFlag = null;
+      auditState.filterClusterId = null;
+
+      renderAudit();
+      showAuditState('main');
+    } catch (e) {
+      console.error('Audit load failed', e);
+      showAuditState('empty');
+    }
+  }
+
+  function showAuditState(state) {
+    document.getElementById('audit-empty').classList.toggle('hidden',   state !== 'empty');
+    document.getElementById('audit-loading').classList.toggle('hidden', state !== 'loading');
+    document.getElementById('audit-main').classList.toggle('hidden',    state !== 'main');
+  }
+
+  function renderAudit() {
+    const c = auditState.crawl;
+    const dom = (c.clients && c.clients.domain) || c.target_url || 'unknown';
+    const name = (c.clients && c.clients.name) || dom;
+    document.getElementById('audit-domain').textContent = name;
+    document.getElementById('audit-meta').textContent =
+      `${dom} · crawled ${(c.finished_at || '').split('T')[0]} · ${auditState.summary.total} pages`;
+
+    // Overview stats
+    document.getElementById('stat-total').textContent      = auditState.summary.total;
+    document.getElementById('stat-ok').textContent         = auditState.summary.ok;
+    document.getElementById('stat-redirects').textContent  = auditState.summary.redirects;
+    document.getElementById('stat-errors-overview').textContent = auditState.summary.errors;
+    document.getElementById('stat-indexable').textContent  = auditState.summary.indexable;
+    document.getElementById('stat-avgwords').textContent   = auditState.summary.avgWordCount;
+
+    renderIssueTiles();
+    renderCannibalCard();
+    renderTable();
+  }
+
+  function renderIssueTiles() {
+    const grid = document.getElementById('issue-tiles');
+    grid.innerHTML = '';
+    ISSUE_TILES.forEach(tile => {
+      const count = auditState.summary.issues[tile.key] || 0;
+      const div = document.createElement('div');
+      div.className = 'stat clickable';
+      div.dataset.count = count;
+      div.dataset.flag  = tile.flag;
+      if (auditState.filterFlag === tile.flag) div.classList.add('active');
+      const valueClass = count === 0 ? '' : tile.tone;
+      div.innerHTML = `
+        <div class="stat-label">${escapeHTML(tile.label)}</div>
+        <div class="stat-value ${valueClass}">${count}</div>
+      `;
+      if (count > 0) {
+        div.onclick = () => toggleFilter(tile.flag);
+      }
+      grid.appendChild(div);
+    });
+  }
+
+  function renderCannibalCard() {
+    const card = document.getElementById('cannibal-card');
+    const list = document.getElementById('cannibal-list');
+    if (!auditState.cannibalClusters || auditState.cannibalClusters.length === 0) {
+      card.classList.add('hidden');
+      return;
+    }
+    card.classList.remove('hidden');
+    list.innerHTML = auditState.cannibalClusters.map((c, idx) => `
+      <div class="cannibal-block">
+        <h4>${escapeHTML(c.titles[0] || c.key)}${c.titles.length > 1 ? ` <span style="color:var(--text-muted);font-weight:400;">(+${c.titles.length - 1} variant${c.titles.length > 2 ? 's' : ''})</span>` : ''}</h4>
+        <ul>
+          ${c.urls.map(u => `<li><a href="${escapeHTML(u)}" target="_blank" rel="noopener">${escapeHTML(u)}</a></li>`).join('')}
+        </ul>
+      </div>
+    `).join('');
+  }
+
+  function toggleFilter(flag) {
+    if (auditState.filterFlag === flag) auditState.filterFlag = null;
+    else auditState.filterFlag = flag;
+    auditState.filterClusterId = null;
+    renderIssueTiles();
+    renderTable();
+  }
+
+  function clearFilters() {
+    auditState.filterFlag = null;
+    auditState.filterClusterId = null;
+    document.getElementById('filter-search').value = '';
+    document.getElementById('filter-status').value = '';
+    renderIssueTiles();
+    renderTable();
+  }
+
+  function renderTable() {
+    const tbody = document.getElementById('audit-tbody');
+    const search = (document.getElementById('filter-search').value || '').toLowerCase();
+    const statusFilter = document.getElementById('filter-status').value;
+
+    let rows = auditState.pages.slice();
+
+    // Issue-flag filter (from clickable tiles)
+    if (auditState.filterFlag) {
+      rows = rows.filter(p => (p.flags || []).includes(auditState.filterFlag));
+    }
+
+    // Status filter
+    if (statusFilter) {
+      rows = rows.filter(p => {
+        const s = p.status_code || 0;
+        if (statusFilter === '0')   return s === 0;
+        if (statusFilter === '2xx') return s >= 200 && s < 300;
+        if (statusFilter === '3xx') return s >= 300 && s < 400;
+        if (statusFilter === '4xx') return s >= 400 && s < 500;
+        if (statusFilter === '5xx') return s >= 500 && s < 600;
+        return true;
+      });
+    }
+
+    // Search filter
+    if (search) {
+      rows = rows.filter(p =>
+        (p.url || '').toLowerCase().includes(search) ||
+        (p.title || '').toLowerCase().includes(search)
+      );
+    }
+
+    // Sort
+    const k = auditState.sortKey;
+    const dir = auditState.sortDir === 'asc' ? 1 : -1;
+    rows.sort((a, b) => {
+      let av = a[k], bv = b[k];
+      if (av == null) av = '';
+      if (bv == null) bv = '';
+      if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+
+    // Render rows
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" style="padding:32px;text-align:center;color:var(--text-muted);">No pages match the current filters.</td></tr>';
+    } else {
+      tbody.innerHTML = rows.map(renderRow).join('');
+    }
+
+    // Sub-text
+    const sub = document.getElementById('inventory-sub');
+    const filterParts = [];
+    if (auditState.filterFlag) filterParts.push(`issue: ${auditState.filterFlag.replace(/_/g, ' ')}`);
+    if (statusFilter) filterParts.push(`status: ${statusFilter}`);
+    if (search) filterParts.push(`search: "${search}"`);
+    sub.textContent = filterParts.length
+      ? `Showing ${rows.length} of ${auditState.pages.length} pages — filtered by ${filterParts.join(', ')}`
+      : `Showing all ${auditState.pages.length} pages.`;
+
+    document.getElementById('clear-filters').style.display =
+      (filterParts.length > 0) ? 'inline-block' : 'none';
+
+    // Sort arrows
+    document.querySelectorAll('.audit-table thead th').forEach(th => {
+      const arrow = th.querySelector('.sort-arrow');
+      if (arrow) arrow.remove();
+      if (th.dataset.sort === auditState.sortKey) {
+        const span = document.createElement('span');
+        span.className = 'sort-arrow';
+        span.textContent = auditState.sortDir === 'asc' ? '↑' : '↓';
+        th.appendChild(span);
+      }
+    });
+  }
+
+  function renderRow(p) {
+    const status = p.status_code || 0;
+    const statusClass = status >= 200 && status < 300 ? 'status-2xx'
+                      : status >= 300 && status < 400 ? 'status-3xx'
+                      : status >= 400 && status < 500 ? 'status-4xx'
+                      : status >= 500 ? 'status-5xx'
+                      : 'status-0';
+    const statusLabel = status === 0 ? 'fail' : status;
+
+    const badges = (p.flags || [])
+      .map(f => {
+        const def = ISSUE_BADGE_LABELS[f];
+        if (!def) return '';
+        const cls = def.tone ? `badge ${def.tone}` : 'badge';
+        return `<span class="${cls}">${escapeHTML(def.label)}</span>`;
+      })
+      .join('');
+
+    const titleCell = p.title
+      ? escapeHTML(truncate(p.title, 80))
+      : '<span style="color:var(--text-muted);font-style:italic;">—</span>';
+
+    return `
+      <tr>
+        <td class="url-cell" title="${escapeHTML(p.url)}"><a href="${escapeHTML(p.url)}" target="_blank" rel="noopener">${escapeHTML(truncate(p.url, 60))}</a></td>
+        <td class="num ${statusClass}">${statusLabel}</td>
+        <td>${titleCell}</td>
+        <td class="num">${p.word_count || 0}</td>
+        <td class="num">${p.inlinks || 0}</td>
+        <td>${escapeHTML(p.indexability || '')}</td>
+        <td>${badges || '<span style="color:var(--text-muted);">—</span>'}</td>
+      </tr>
+    `;
+  }
+
+  // Sort header click handlers
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.audit-table thead th[data-sort]').forEach(th => {
+      th.addEventListener('click', () => {
+        const k = th.dataset.sort;
+        if (auditState.sortKey === k) {
+          auditState.sortDir = auditState.sortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+          auditState.sortKey = k;
+          auditState.sortDir = (k === 'url' || k === 'title' || k === 'indexability') ? 'asc' : 'desc';
+        }
+        renderTable();
+      });
+    });
+  });
+
+  function downloadCSV() {
+    if (!auditState.crawlId) return;
+    window.location.href = '/api/audit/' + auditState.crawlId + '.csv';
+  }
+
 </script>
 
 </body>

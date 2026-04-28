@@ -251,6 +251,39 @@ async function getCrawlPages(crawlId) {
   return data || [];
 }
 
+/**
+ * Returns the most recent finished crawl across ALL clients, with client info joined.
+ * Used by the Audit tab to auto-select what to show on load.
+ */
+async function getMostRecentFinishedCrawl() {
+  const sb = getClient();
+  const { data, error } = await sb
+    .from('crawls')
+    .select('*, clients!inner(domain, name)')
+    .eq('status', 'done')
+    .order('finished_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Returns a list of all finished crawls, newest first, with client info.
+ * Used to populate any "switch to a different crawl" dropdown.
+ */
+async function listFinishedCrawls(limit) {
+  const sb = getClient();
+  const { data, error } = await sb
+    .from('crawls')
+    .select('id, target_url, status, page_count, error_count, avg_word_count, finished_at, is_latest, clients!inner(domain, name)')
+    .eq('status', 'done')
+    .order('finished_at', { ascending: false })
+    .limit(limit || 50);
+  if (error) throw error;
+  return data || [];
+}
+
 module.exports = {
   getClient,
   normalizeDomain,
@@ -263,4 +296,6 @@ module.exports = {
   getCrawl,
   getLatestCrawlForDomain,
   getCrawlPages,
+  getMostRecentFinishedCrawl,
+  listFinishedCrawls,
 };

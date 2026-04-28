@@ -45,10 +45,22 @@ migrations/               — SQL schema (run in Supabase SQL editor)
 
 ## Phase status
 
-- **Phase 1 (current)** — Skeleton, shared crawl service, Supabase persistence, Crawl tab UI
-- **Phase 2 (next)** — Audit tab (port from old Site Auditor — CSV export, cannibalization, content audit)
-- **Phase 3** — Scout tab (port from old Content Scout — Markdown batches for AI context)
+- **Phase 1** ✅ — Skeleton, shared crawl service, Supabase persistence, Crawl tab UI
+- **Phase 2 (current)** ✅ — Audit tab: overview, clickable issue filters, sortable inventory, cannibalization detection, CSV export
+- **Phase 3 (next)** — Scout tab (port from old Content Scout — Markdown batches for AI context)
 - **Phase 4** — Brand Voice tab + cross-tool API
+
+## Audit tab — what it does
+
+Reads from any finalized crawl (defaults to the most recent across all clients). Computes:
+
+- **Status overview** — total pages, OK/redirect/error counts, indexable count, average word count
+- **Issue tiles** — clickable filters for: thin content, missing/short/long titles, missing/short metas, missing H1s, no CTA, canonical issues, cannibalization. Each tile filters the inventory table.
+- **Cannibalization detection** — groups indexable pages by normalized title (stripping site-name suffix), surfaces clusters of 2+ pages competing for the same primary topic
+- **Inventory table** — sortable, filterable by status code or text search, with per-row issue badges
+- **CSV export** — clean column names (URL, Status, Title, Word Count, Issue Flags, etc.), suitable for client deliverables and Google Sheets analysis
+
+Thresholds (thin content, title length, meta length) are stashed in `analyzers/audit.js` constants. If the team needs per-client tuning, expose them in the UI then.
 
 ## Storage policy
 

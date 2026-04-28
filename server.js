@@ -25,6 +25,7 @@ const path    = require('path');
 const engine = require('./crawl/engine');
 const store  = require('./crawl/store');
 const jobs   = require('./jobs');
+const audit  = require('./analyzers/audit');
 
 const app  = express();
 const PORT = parseInt(process.env.PORT, 10) || 3000;
@@ -159,6 +160,63 @@ app.get('/api/client/:domain/latest-crawl', async (req, res) => {
     res.json(crawl);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── List of finished crawls (for "switch crawl" dropdown) ───────────────────
+
+app.get('/api/crawls', async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
+    const list = await store.listFinishedCrawls(limit);
+    res.json({ crawls: list });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Audit endpoints ─────────────────────────────────────────────────────────
+// `:id` is either a crawl UUID or the literal string 'latest' to auto-pick
+// the most recent finished crawl across all clients.
+
+async function resolveCrawl(idOrLatest) {
+  if (idOrLatest === 'latest') {
+    return await store.getMostRecentFinishedCrawl();
+  }
+  return await store.getCrawl(idOrLatest);
+}
+
+app.get('/api/audit/:id', async (req, res) => {
+  try {
+    const crawl = await resolveCrawl(req.params.id);
+    if (!crawl) return res.status(404).json({ error: 'Crawl not found' });
+    const pages = await store.getCrawlPages(crawl.id);
+    const result = audit.analyze(pages);
+    res.json({ crawl, ...result });
+  } catch (err) {
+    console.error('[audit] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/audit/:id.csv', async (req, res) => {
+  try {
+    const crawl = await resolveCrawl(req.params.id);
+    if (!crawl) return res.status(404).send('Crawl not found');
+    const pages = await store.getCrawlPages(crawl.id);
+    const result = audit.analyze(pages);
+    const csv = audit.buildCSV(result.pages);
+
+    const domain = (crawl.clients && crawl.clients.domain) || 'site';
+    const date = (crawl.finished_at || new Date().toISOString()).split('T')[0];
+    const filename = `audit-${domain}-${date}.csv`;
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csv);
+  } catch (err) {
+    console.error('[audit csv] error:', err);
+    res.status(500).send('Error: ' + err.message);
   }
 });
 
