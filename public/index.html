@@ -647,6 +647,8 @@
   .push-status { font-size: 11px; font-family: 'Barlow', sans-serif; }
   .push-status.ok   { color: var(--green-mid); }
   .push-status.err  { color: var(--red); }
+  .seo-no-change { font-size: 12px; color: var(--green-mid); font-family: 'Barlow', sans-serif; font-style: italic; }
+  .seo-reason    { font-size: 11px; color: var(--text-muted); font-family: 'Barlow', sans-serif; margin-top: 3px; }
 
   /* Schema proposals */
   .schema-page-card { border: 1px solid var(--border); border-radius: 10px; margin-bottom: 12px; overflow: hidden; }
@@ -2973,23 +2975,45 @@
 
   function renderSeoResults() {
     const proposals = optState.seoProposals;
+    const needsChange = proposals.filter(p => p.proposed_title || p.proposed_meta).length;
+    const noChange    = proposals.length - needsChange;
+    const parts = [];
+    if (needsChange > 0) parts.push(`${needsChange} page${needsChange === 1 ? '' : 's'} need updates`);
+    if (noChange    > 0) parts.push(`${noChange} already optimized`);
     document.getElementById('seo-results-sub').textContent =
-      `${proposals.length} page${proposals.length === 1 ? '' : 's'} optimized. Review and edit, then push to WordPress.`;
+      parts.join(' · ') + '. Review and edit, then push to WordPress.';
 
     document.getElementById('seo-results-tbody').innerHTML = proposals.map((item, i) => {
-      const urlDisplay  = escapeHTML((item.url || '').replace(/^https?:\/\/[^\/]+/, '') || '/');
-      const page        = optState.pages.find(p => p.url === item.url) || {};
-      const propTitle   = escapeHTML(item.proposed_title || '');
-      const propMeta    = escapeHTML(item.proposed_meta  || '');
-      const titleLen    = (item.proposed_title || '').length;
-      const metaLen     = (item.proposed_meta  || '').length;
-      const titleCC     = titleLen === 0 ? '' : titleLen < 50 ? 'warn' : titleLen <= 60 ? 'ok' : 'bad';
-      const metaCC      = metaLen  === 0 ? '' : metaLen  < 150 ? 'warn' : metaLen  <= 160 ? 'ok' : 'bad';
-      const titleHint   = titleLen === 0 ? '' : titleLen < 50 ? ' — too short' : titleLen <= 60 ? ' — good' : ' — too long';
-      const metaHint    = metaLen  === 0 ? '' : metaLen  < 150 ? ' — too short' : metaLen  <= 160 ? ' — good' : ' — too long';
+      const urlDisplay = escapeHTML((item.url || '').replace(/^https?:\/\/[^\/]+/, '') || '/');
+      const page       = optState.pages.find(p => p.url === item.url) || {};
+      const noChange   = !item.proposed_title && !item.proposed_meta;
+      const reason     = escapeHTML(item.reason || '');
+
+      if (noChange) {
+        return `<tr data-idx="${i}" style="background:var(--green-lighter);">
+          <td class="seo-url" title="${escapeHTML(item.url || '')}">
+            <a href="${escapeHTML(item.url || '')}" target="_blank" rel="noopener">${urlDisplay}</a>
+          </td>
+          <td colspan="4">
+            <span class="seo-no-change">No changes needed</span>
+            ${reason ? `<div class="seo-reason">${reason}</div>` : ''}
+          </td>
+          <td><span style="font-size:11px;color:var(--text-muted);">—</span></td>
+        </tr>`;
+      }
+
+      const propTitle = escapeHTML(item.proposed_title || '');
+      const propMeta  = escapeHTML(item.proposed_meta  || '');
+      const titleLen  = (item.proposed_title || '').length;
+      const metaLen   = (item.proposed_meta  || '').length;
+      const titleCC   = titleLen === 0 ? '' : titleLen < 50 ? 'warn' : titleLen <= 60 ? 'ok' : 'bad';
+      const metaCC    = metaLen  === 0 ? '' : metaLen  < 150 ? 'warn' : metaLen  <= 160 ? 'ok' : 'bad';
+      const titleHint = titleLen === 0 ? '' : titleLen < 50 ? ' — too short' : titleLen <= 60 ? ' — good' : ' — too long';
+      const metaHint  = metaLen  === 0 ? '' : metaLen  < 150 ? ' — too short' : metaLen  <= 160 ? ' — good' : ' — too long';
       return `<tr data-idx="${i}">
         <td class="seo-url" title="${escapeHTML(item.url || '')}">
           <a href="${escapeHTML(item.url || '')}" target="_blank" rel="noopener">${urlDisplay}</a>
+          ${reason ? `<div class="seo-reason">${reason}</div>` : ''}
         </td>
         <td style="max-width:160px;">
           <div style="font-size:12px;color:var(--text-secondary);">${escapeHTML(page.title || '')}</div>
@@ -3030,11 +3054,13 @@
     btn.disabled    = true;
     btn.textContent = 'Pushing…';
 
-    const items = optState.seoProposals.map((item, i) => ({
-      url:   item.url,
-      title: document.getElementById(`seo-title-${i}`)?.value.trim() || null,
-      meta:  document.getElementById(`seo-meta-${i}`)?.value.trim()  || null,
-    })).filter(it => it.title || it.meta);
+    const items = optState.seoProposals
+      .map((item, i) => ({
+        url:   item.url,
+        title: document.getElementById(`seo-title-${i}`)?.value.trim() || null,
+        meta:  document.getElementById(`seo-meta-${i}`)?.value.trim()  || null,
+      }))
+      .filter(it => it.title || it.meta); // skips "no change" rows (no textarea rendered)
 
     if (items.length === 0) {
       btn.disabled = false; btn.textContent = 'Push all to WordPress'; return;
