@@ -530,7 +530,7 @@
 
 <nav>
   <div class="nav-title">MMW <span>Site Intelligence</span></div>
-  <div class="nav-badge">Phase 2 — Audit</div>
+  <div class="nav-badge">Phase 3 — Scout</div>
 </nav>
 
 <main>
@@ -542,7 +542,7 @@
   <div class="tabs" role="tablist">
     <button class="tab active" data-tab="crawl" onclick="switchTab('crawl', this)">Crawl</button>
     <button class="tab" data-tab="audit"  onclick="switchTab('audit', this)">Audit</button>
-    <button class="tab" data-tab="scout"  disabled title="Coming in phase 3">Scout <span class="tab-badge">Soon</span></button>
+    <button class="tab" data-tab="scout"  onclick="switchTab('scout', this)">Scout</button>
     <button class="tab" data-tab="voice"  disabled title="Coming in phase 4">Brand Voice <span class="tab-badge">Soon</span></button>
   </div>
 
@@ -728,10 +728,78 @@
     </div>
   </section>
   <section class="tab-panel" id="panel-scout">
-    <div class="card placeholder">
-      <div class="placeholder-icon">⚙</div>
-      <h3>Scout — coming in phase 3</h3>
-      <p>Generate Markdown content blocks for AI context — same output as the standalone Scout tool, but using the shared crawl instead of a separate fetch.</p>
+
+    <!-- Empty state -->
+    <div class="card audit-empty hidden" id="scout-empty">
+      <h3>No completed crawls yet</h3>
+      <p>Run a crawl from the Crawl tab to populate the Scout.</p>
+    </div>
+
+    <!-- Loading state -->
+    <div class="card audit-empty hidden" id="scout-loading">
+      <h3>Loading pages…</h3>
+    </div>
+
+    <!-- Main state -->
+    <div id="scout-main" class="hidden">
+
+      <!-- Toolbar -->
+      <div class="card">
+        <div class="audit-toolbar">
+          <div class="audit-context">
+            <div class="audit-context-domain" id="scout-domain">—</div>
+            <div class="audit-context-meta" id="scout-meta">—</div>
+          </div>
+          <div class="audit-actions" style="flex-wrap:wrap;gap:8px;">
+            <select class="crawl-select" id="scout-crawl-select" onchange="loadScoutPages(this.value)"></select>
+            <input type="text" id="scout-site-name" placeholder="Site name (for filenames)" style="width:200px;padding:8px 12px;font-size:13px;font-family:Barlow,sans-serif;color:var(--dark);background:var(--white);border:1px solid var(--border-strong);border-radius:8px;">
+            <div style="display:flex;align-items:center;gap:6px;">
+              <label style="font-size:11px;font-weight:600;color:var(--text-secondary);letter-spacing:0.06em;text-transform:uppercase;white-space:nowrap;">Batch size</label>
+              <input type="number" id="scout-batch-size" value="100" min="10" max="500" style="width:72px;padding:8px 10px;font-size:13px;font-family:Barlow,sans-serif;color:var(--dark);background:var(--white);border:1px solid var(--border-strong);border-radius:8px;">
+            </div>
+            <button class="primary" id="scout-generate-btn" onclick="generateScout()" disabled>Generate (0 selected)</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Page picker -->
+      <div class="card">
+        <div class="card-title">Page picker</div>
+        <div class="card-sub" id="scout-card-sub">Select which pages to include in the Markdown export.</div>
+
+        <div class="filter-row" style="justify-content:space-between;gap:12px;">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;flex:1;">
+            <input type="text" id="scout-search" placeholder="Search by URL or title…" oninput="renderScoutTable()" style="flex:1;min-width:180px;">
+            <select id="scout-filter-content" onchange="renderScoutTable()" class="crawl-select">
+              <option value="all">All pages</option>
+              <option value="content">Has content (150+ words)</option>
+              <option value="no-content">Low content</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <button class="secondary" onclick="selectDefaults()" style="font-size:12px;padding:7px 14px;">Select defaults</button>
+            <button class="secondary" onclick="selectAllVisible()" style="font-size:12px;padding:7px 14px;">Select visible</button>
+            <button class="secondary" onclick="deselectAll()" style="font-size:12px;padding:7px 14px;">Deselect all</button>
+          </div>
+        </div>
+
+        <div class="audit-table-wrap">
+          <table class="audit-table" id="scout-table">
+            <thead>
+              <tr>
+                <th style="width:38px;text-align:center;cursor:default;">
+                  <input type="checkbox" id="scout-header-cb" title="Toggle visible" onchange="toggleVisibleCheckboxes(this.checked)" style="accent-color:var(--green);">
+                </th>
+                <th data-sort="url" data-table="scout">URL</th>
+                <th data-sort="title" data-table="scout">Title / H1</th>
+                <th data-sort="word_count" data-table="scout" class="num">Words</th>
+                <th data-sort="status_code" data-table="scout" class="num">Status</th>
+              </tr>
+            </thead>
+            <tbody id="scout-tbody"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </section>
   <section class="tab-panel" id="panel-voice">
@@ -758,6 +826,7 @@
     btn.classList.add('active');
     document.getElementById('panel-' + name).classList.add('active');
     if (name === 'audit') initAuditTab();
+    if (name === 'scout') initScoutTab();
   }
 
   // ─── Crawl flow ────────────────────────────────────────────────────────
@@ -1234,7 +1303,7 @@
 
   // Sort header click handlers
   document.addEventListener('DOMContentLoaded', () => {
-    document.querySelectorAll('.audit-table thead th[data-sort]').forEach(th => {
+    document.querySelectorAll('#audit-table thead th[data-sort]').forEach(th => {
       th.addEventListener('click', () => {
         const k = th.dataset.sort;
         if (auditState.sortKey === k) {
@@ -1246,11 +1315,292 @@
         renderTable();
       });
     });
+
+    document.querySelectorAll('#scout-table thead th[data-sort]').forEach(th => {
+      th.addEventListener('click', () => {
+        const k = th.dataset.sort;
+        if (scoutState.sortKey === k) {
+          scoutState.sortDir = scoutState.sortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+          scoutState.sortKey = k;
+          scoutState.sortDir = (k === 'url' || k === 'title') ? 'asc' : 'desc';
+        }
+        renderScoutTable();
+      });
+    });
   });
 
   function downloadCSV() {
     if (!auditState.crawlId) return;
     window.location.href = '/api/audit/' + auditState.crawlId + '.csv';
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // SCOUT TAB
+  // ═══════════════════════════════════════════════════════════════════════
+
+  let scoutState = {
+    initialized: false,
+    crawlId:     null,
+    crawl:       null,
+    pages:       [],
+    selected:    new Set(),
+    sortKey:     'url',
+    sortDir:     'asc',
+    _visible:    [],   // URLs currently visible in the filtered table
+  };
+
+  async function initScoutTab() {
+    if (scoutState.initialized) return;
+    scoutState.initialized = true;
+    showScoutState('loading');
+
+    try {
+      const res = await fetch('/api/crawls?limit=50');
+      const { crawls } = await res.json();
+      if (!crawls || crawls.length === 0) { showScoutState('empty'); return; }
+      populateScoutSelect(crawls);
+      await loadScoutPages('latest');
+    } catch (e) {
+      console.error('Scout init failed', e);
+      showScoutState('empty');
+    }
+  }
+
+  function populateScoutSelect(crawls) {
+    const sel = document.getElementById('scout-crawl-select');
+    sel.innerHTML = '<option value="latest">Most recent crawl</option>';
+    crawls.forEach(c => {
+      const dom  = (c.clients && c.clients.domain) || 'unknown';
+      const date = (c.finished_at || '').split('T')[0];
+      const opt  = document.createElement('option');
+      opt.value       = c.id;
+      opt.textContent = `${dom} — ${date} (${c.page_count} pages)`;
+      sel.appendChild(opt);
+    });
+  }
+
+  async function loadScoutPages(crawlId) {
+    showScoutState('loading');
+    try {
+      const res = await fetch(`/api/scout/${crawlId}/pages`);
+      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))).error) || res.statusText);
+      const data = await res.json();
+
+      scoutState.crawlId = data.crawlId;
+      scoutState.crawl   = data.crawl;
+      scoutState.pages   = data.pages || [];
+      scoutState.selected = new Set(
+        scoutState.pages.filter(p => p.default_checked).map(p => p.url)
+      );
+
+      const c   = data.crawl;
+      const dom = (c.clients && c.clients.domain) || c.target_url || 'unknown';
+      const nam = (c.clients && c.clients.name)   || dom;
+      document.getElementById('scout-domain').textContent = nam;
+      document.getElementById('scout-meta').textContent   =
+        `${dom} · crawled ${(c.finished_at || '').split('T')[0]} · ${scoutState.pages.length} pages`;
+
+      const siteInput = document.getElementById('scout-site-name');
+      if (!siteInput.value) siteInput.value = nam;
+
+      renderScoutTable();
+      updateScoutGenBtn();
+      showScoutState('main');
+    } catch (e) {
+      console.error('Scout pages load failed', e);
+      showScoutState('empty');
+    }
+  }
+
+  function showScoutState(state) {
+    document.getElementById('scout-empty').classList.toggle('hidden',   state !== 'empty');
+    document.getElementById('scout-loading').classList.toggle('hidden', state !== 'loading');
+    document.getElementById('scout-main').classList.toggle('hidden',    state !== 'main');
+  }
+
+  function renderScoutTable() {
+    const search        = (document.getElementById('scout-search').value || '').toLowerCase();
+    const contentFilter = document.getElementById('scout-filter-content').value;
+
+    let rows = scoutState.pages.slice();
+
+    if (search) {
+      rows = rows.filter(p =>
+        (p.url   || '').toLowerCase().includes(search) ||
+        (p.title || '').toLowerCase().includes(search) ||
+        (p.h1    || '').toLowerCase().includes(search)
+      );
+    }
+
+    if (contentFilter === 'content')    rows = rows.filter(p => (p.word_count || 0) >= 150);
+    if (contentFilter === 'no-content') rows = rows.filter(p => (p.word_count || 0) < 150);
+
+    const k   = scoutState.sortKey;
+    const dir = scoutState.sortDir === 'asc' ? 1 : -1;
+    rows.sort((a, b) => {
+      let av = a[k], bv = b[k];
+      if (av == null) av = '';
+      if (bv == null) bv = '';
+      if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+
+    scoutState._visible = rows.map(p => p.url);
+
+    const tbody = document.getElementById('scout-tbody');
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="padding:32px;text-align:center;color:var(--text-muted);">No pages match the current filters.</td></tr>';
+    } else {
+      tbody.innerHTML = rows.map(renderScoutRow).join('');
+    }
+
+    const sub = document.getElementById('scout-card-sub');
+    const sel = scoutState.selected.size;
+    sub.textContent = `${rows.length} of ${scoutState.pages.length} pages shown · ${sel} selected`;
+
+    updateHeaderCb();
+
+    // Sort arrows
+    document.querySelectorAll('#scout-table thead th[data-sort]').forEach(th => {
+      const arrow = th.querySelector('.sort-arrow');
+      if (arrow) arrow.remove();
+      if (th.dataset.sort === scoutState.sortKey) {
+        const span = document.createElement('span');
+        span.className = 'sort-arrow';
+        span.textContent = scoutState.sortDir === 'asc' ? '↑' : '↓';
+        th.appendChild(span);
+      }
+    });
+  }
+
+  function renderScoutRow(p) {
+    const checked     = scoutState.selected.has(p.url) ? 'checked' : '';
+    const status      = p.status_code || 0;
+    const statusClass = status >= 200 && status < 300 ? 'status-2xx'
+                      : status >= 300 && status < 400 ? 'status-3xx'
+                      : status >= 400 ? 'status-4xx' : 'status-0';
+    const statusLabel = status === 0 ? 'fail' : status;
+    const displayTitle = (p.h1 || p.title || '');
+    const wc  = p.word_count || 0;
+    const wcStyle = wc > 0 && wc < 150 ? 'color:var(--amber)' : '';
+
+    return `
+      <tr>
+        <td style="text-align:center;vertical-align:middle;padding:8px 6px;">
+          <input type="checkbox" ${checked} data-url="${escapeHTML(p.url)}"
+            onchange="toggleScoutPage(this.dataset.url, this.checked)"
+            style="accent-color:var(--green);">
+        </td>
+        <td class="url-cell" title="${escapeHTML(p.url)}">
+          <a href="${escapeHTML(p.url)}" target="_blank" rel="noopener">${escapeHTML(truncate(p.url, 55))}</a>
+        </td>
+        <td>${displayTitle ? escapeHTML(truncate(displayTitle, 70)) : '<span style="color:var(--text-muted);font-style:italic;">—</span>'}</td>
+        <td class="num" style="${wcStyle}">${wc}</td>
+        <td class="num ${statusClass}">${statusLabel}</td>
+      </tr>
+    `;
+  }
+
+  function toggleScoutPage(url, checked) {
+    if (checked) scoutState.selected.add(url);
+    else         scoutState.selected.delete(url);
+    updateScoutGenBtn();
+    updateHeaderCb();
+    const sub = document.getElementById('scout-card-sub');
+    const visible = scoutState._visible.length;
+    const total   = scoutState.pages.length;
+    sub.textContent = `${visible} of ${total} pages shown · ${scoutState.selected.size} selected`;
+  }
+
+  function toggleVisibleCheckboxes(checked) {
+    scoutState._visible.forEach(url => {
+      if (checked) scoutState.selected.add(url);
+      else         scoutState.selected.delete(url);
+    });
+    renderScoutTable();
+    updateScoutGenBtn();
+  }
+
+  function selectAllVisible() {
+    scoutState._visible.forEach(url => scoutState.selected.add(url));
+    renderScoutTable();
+    updateScoutGenBtn();
+  }
+
+  function deselectAll() {
+    scoutState.selected.clear();
+    renderScoutTable();
+    updateScoutGenBtn();
+  }
+
+  function selectDefaults() {
+    scoutState.selected = new Set(
+      scoutState.pages.filter(p => p.default_checked).map(p => p.url)
+    );
+    renderScoutTable();
+    updateScoutGenBtn();
+  }
+
+  function updateHeaderCb() {
+    const cb = document.getElementById('scout-header-cb');
+    if (!cb) return;
+    const visible  = scoutState._visible;
+    const selCount = visible.filter(u => scoutState.selected.has(u)).length;
+    cb.indeterminate = selCount > 0 && selCount < visible.length;
+    cb.checked       = visible.length > 0 && selCount === visible.length;
+  }
+
+  function updateScoutGenBtn() {
+    const btn   = document.getElementById('scout-generate-btn');
+    const count = scoutState.selected.size;
+    btn.textContent = `Generate (${count} selected)`;
+    btn.disabled    = count === 0;
+  }
+
+  async function generateScout() {
+    const selected  = [...scoutState.selected];
+    if (selected.length === 0) return;
+
+    const siteName  = document.getElementById('scout-site-name').value.trim();
+    const batchSize = parseInt(document.getElementById('scout-batch-size').value, 10) || 100;
+    const crawlId   = scoutState.crawlId;
+
+    const btn = document.getElementById('scout-generate-btn');
+    btn.disabled    = true;
+    btn.textContent = 'Generating…';
+
+    try {
+      const res = await fetch(`/api/scout/${crawlId}/generate`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ urls: selected, siteName, batchSize }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        alert('Generation failed: ' + (err.error || res.statusText));
+        return;
+      }
+
+      const disposition = res.headers.get('content-disposition') || '';
+      const match       = disposition.match(/filename="([^"]+)"/);
+      const filename    = match ? match[1] : 'scout-output.zip';
+
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (e) {
+      alert('Generation failed: ' + e.message);
+    } finally {
+      updateScoutGenBtn();
+    }
   }
 
 </script>

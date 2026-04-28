@@ -22,10 +22,13 @@ const express = require('express');
 const cors    = require('cors');
 const path    = require('path');
 
+const JSZip  = require('jszip');
+
 const engine = require('./crawl/engine');
 const store  = require('./crawl/store');
 const jobs   = require('./jobs');
 const audit  = require('./analyzers/audit');
+const scout  = require('./analyzers/scout');
 
 const app  = express();
 const PORT = parseInt(process.env.PORT, 10) || 3000;
@@ -217,6 +220,73 @@ app.get('/api/audit/:id.csv', async (req, res) => {
   } catch (err) {
     console.error('[audit csv] error:', err);
     res.status(500).send('Error: ' + err.message);
+  }
+});
+
+// ─── Scout endpoints ─────────────────────────────────────────────────────────
+// Lightweight page list for the picker UI; generate returns a zip of .md files.
+
+app.get('/api/scout/:crawlId/pages', async (req, res) => {
+  try {
+    const crawl = await resolveCrawl(req.params.crawlId);
+    if (!crawl) return res.status(404).json({ error: 'Crawl not found' });
+    const pages = await store.getCrawlPagesMeta(crawl.id);
+    const withFlags = pages.map(p => ({ ...p, default_checked: scout.shouldDefaultCheck(p) }));
+    res.json({ crawlId: crawl.id, crawl, pages: withFlags });
+  } catch (err) {
+    console.error('[scout pages] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/scout/:crawlId/generate', async (req, res) => {
+  try {
+    const { urls, siteName, batchSize: batchSizeInput } = req.body || {};
+    if (!Array.isArray(urls) || urls.length === 0) {
+      return res.status(400).json({ error: 'urls array is required and must be non-empty' });
+    }
+    const batchSize = Math.max(1, Math.min(500, parseInt(batchSizeInput, 10) || 100));
+
+    const crawl = await resolveCrawl(req.params.crawlId);
+    if (!crawl) return res.status(404).json({ error: 'Crawl not found' });
+
+    const allPages = await store.getCrawlPages(crawl.id);
+    const urlSet   = new Set(urls);
+    const selected = allPages.filter(p => urlSet.has(p.url));
+
+    if (selected.length === 0) {
+      return res.status(400).json({ error: 'No matching pages found for the provided URLs' });
+    }
+
+    const domain = (crawl.clients && crawl.clients.domain) || 'site';
+    const name   = (siteName || '').trim() || (crawl.clients && crawl.clients.name) || domain;
+    const date   = (crawl.finished_at || new Date().toISOString()).split('T')[0];
+
+    const batches = scout.buildBatches(selected, batchSize);
+    const zip     = new JSZip();
+
+    const batchMeta = batches.map((pages, i) => {
+      const filename = `batch-${String(i + 1).padStart(3, '0')}.md`;
+      zip.file(filename, scout.formatBatch(pages, {
+        siteName:    name,
+        batchNumber: i + 1,
+        batchTotal:  batches.length,
+        startIndex:  i * batchSize,
+      }));
+      return { filename, count: pages.length, startIndex: i * batchSize };
+    });
+
+    zip.file('manifest.md', scout.formatManifest(batchMeta, { siteName: name }));
+
+    const zipBuffer  = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+    const zipFilename = `scout-${domain}-${date}.zip`;
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${zipFilename}"`);
+    res.send(zipBuffer);
+  } catch (err) {
+    console.error('[scout generate] error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 

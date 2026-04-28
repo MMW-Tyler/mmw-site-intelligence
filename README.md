@@ -27,7 +27,7 @@ The merge:
 
 ## The four-phase build plan
 
-The project is being built in four phases. Each phase is independently shippable — when a phase finishes, the tool is still useful, just with fewer features. Phases 1 and 2 are done; phases 3 and 4 are the remaining work.
+The project is being built in four phases. Each phase is independently shippable — when a phase finishes, the tool is still useful, just with fewer features. Phases 1, 2, and 3 are done; phase 4 is the remaining work.
 
 ### Phase 1 — Crawl service + skeleton (DONE)
 
@@ -57,7 +57,7 @@ The project is being built in four phases. Each phase is independently shippable
 - Audit tab UI: toolbar with crawl-switcher dropdown and CSV download button, overview stats grid, clickable issue tiles, conditional cannibalization card, sortable + filterable inventory table.
 - CSV column names cleaned up (no longer mirroring Screaming Frog's "Address / Title 1" — just "URL / Title" etc.) since MMW doesn't use Screaming Frog.
 
-### Phase 3 — Scout tab (NEXT)
+### Phase 3 — Scout tab (DONE)
 
 **Goal:** Port the legacy Content Scout's functionality (Markdown content blocks for AI context) into a Scout tab that reads from the shared crawl. The legacy Scout asked the user to paste a list of URLs, then re-fetched each one. The Scout tab should never re-fetch — pages from the most recent crawl come pre-loaded with checkboxes.
 
@@ -69,17 +69,16 @@ The project is being built in four phases. Each phase is independently shippable
 - Download as a zip of `.md` files (the old Scout output is a folder of files — preserve this since the team's downstream workflow expects it).
 - Cleaning rules from the old Scout's `extractContent()` are already applied at crawl time (the extracted content is in `crawl_pages.extracted_body` and `crawl_pages.headings`). Phase 3 just consumes that data.
 
-**Files this phase will likely touch:**
-- New: `analyzers/scout.js` — pure functions: `formatPageBlock(page)`, `formatBatch(pages, opts)`, `formatManifest(batches, opts)`. Same output format as the legacy Scout's `server.js`.
-- New: zip-building utility (likely `archiver` or `jszip` — pick whichever is lighter and works server-side).
-- Modify: `server.js` — add `GET /api/scout/:crawlId/pages` (returns just the URL list with metadata for the picker), `POST /api/scout/:crawlId/generate` (returns a zip of Markdown files).
-- Modify: `public/index.html` — replace the Scout placeholder panel with the real UI, enable the tab button.
-- Modify: `README.md` — update phase status.
+**What was delivered:**
+- Scout analyzer (`analyzers/scout.js`) — pure functions: `shouldDefaultCheck(page)` (default selection heuristic), `formatPageBlock(page)`, `formatBatch(pages, opts)`, `formatManifest(batchMeta, opts)`, `buildBatches(pages, batchSize)`.
+- Default selection heuristic: checks pages with status 2xx, indexable, 150+ words, excludes cart/login/admin/asset URLs.
+- Markdown format: batch file opens with a header line, then each page as `## H1 or Title`, URL, subheadings line, then extracted body prose. Pages separated by `---`. Manifest lists all batch files.
+- Zip via `jszip` — server generates a `nodebuffer` and sends it as `application/zip`. Client uses fetch + Blob URL to trigger the download.
+- Two new endpoints in `server.js`: `GET /api/scout/:crawlId/pages` (lightweight metadata via `getCrawlPagesMeta`, includes `default_checked` flag), `POST /api/scout/:crawlId/generate` (builds and returns a zip stream).
+- New store function: `getCrawlPagesMeta(crawlId)` — selects only the columns needed for the picker (no extracted_body/text), keeping the response small.
+- Scout tab UI: crawl-switcher dropdown (same crawl list as Audit), site name input (auto-populated from client name), batch size input (default 100), Generate button with selected count. Page picker with checkboxes, search, content filter, and Select defaults / Select visible / Deselect all buttons. Header checkbox with indeterminate state. Sortable columns.
 
-**What to look at for reference:**
-The legacy `mmw-content-scout` server.js (no longer in this repo) had a `formatPageBlock` function and Markdown formatting logic. The functionality is preserved in this repo's `crawl/extractor.js` for the *extraction* side; the *formatting* side (Markdown blocks, manifest, batch headers) needs to be ported. If you don't have access to the legacy code, ask the user for the old Scout's `output/` sample files — they show the exact target output format.
-
-### Phase 4 — Brand Voice tab + cross-tool API (FINAL)
+### Phase 4 — Brand Voice tab + cross-tool API (NEXT)
 
 **Goal:** Build the Brand Voice analyzer and expose it as an API so other MMW tools (Content Engine, Press Release Writer, future Blog Writer) can pull a client's brand voice profile into their generation prompts. This is the highest-leverage phase — every downstream content tool gets better once Brand Voice exists.
 
@@ -187,7 +186,7 @@ crawl/
 
 analyzers/
   audit.js                — Phase 2: stats, issue flagging, cannibalization detection, CSV builder
-  scout.js                — Phase 3: TODO — Markdown content block formatting
+  scout.js                — Phase 3: default-check heuristic, Markdown content block formatting, zip manifest
   voice.js                — Phase 4: TODO — Brand voice analysis orchestration
 
 prompts/                  — Phase 4: TODO — voice-analysis.js, voice-profile.js
@@ -264,9 +263,9 @@ Render's free tier sleeps after 15 min of inactivity. First request after sleep 
 - `GET /api/audit/:id` — `:id` can be a crawl UUID or the literal string `"latest"`. Returns `{ crawl, summary, pages, cannibalClusters }`.
 - `GET /api/audit/:id.csv` — returns CSV download with cleaned-up column names. Filename: `audit-{domain}-{date}.csv`.
 
-### Scout (phase 3) — to be added
-- `GET /api/scout/:crawlId/pages` — page list with metadata for the picker
-- `POST /api/scout/:crawlId/generate` — body: `{ urls: [...], siteName, batchSize }`. Returns a zip stream.
+### Scout (phase 3)
+- `GET /api/scout/:crawlId/pages` — `:crawlId` can be a UUID or `"latest"`. Returns `{ crawlId, crawl, pages: [...with default_checked flag] }`. Page objects include: `url, status_code, title, h1, word_count, indexability, default_checked`.
+- `POST /api/scout/:crawlId/generate` — body: `{ urls: [...], siteName, batchSize }`. Returns a `.zip` download containing `batch-001.md`, `batch-002.md`, … and `manifest.md`. Filename: `scout-{domain}-{date}.zip`.
 
 ### Brand Voice (phase 4) — to be added
 - `POST /api/voice/:crawlId/generate` — body: `{ urls: [...] }`. Internal endpoint, no auth needed (used by the UI on the same origin).

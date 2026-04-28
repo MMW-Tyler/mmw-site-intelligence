@@ -269,6 +269,21 @@ async function getMostRecentFinishedCrawl() {
 }
 
 /**
+ * Lightweight page metadata for the Scout picker — no extracted_body/text.
+ * Keeps the response small when the user is just selecting pages, not generating.
+ */
+async function getCrawlPagesMeta(crawlId) {
+  const sb = getClient();
+  const { data, error } = await sb
+    .from('crawl_pages')
+    .select('url, status_code, redirect_to, title, h1, word_count, indexability')
+    .eq('crawl_id', crawlId)
+    .order('url');
+  if (error) throw error;
+  return data || [];
+}
+
+/**
  * Returns a list of all finished crawls, newest first, with client info.
  * Used to populate any "switch to a different crawl" dropdown.
  */
@@ -296,6 +311,7 @@ module.exports = {
   getCrawl,
   getLatestCrawlForDomain,
   getCrawlPages,
+  getCrawlPagesMeta,
   getMostRecentFinishedCrawl,
   listFinishedCrawls,
 };
