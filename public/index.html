@@ -524,13 +524,66 @@
   .cannibal-block li { font-size: 12.5px; line-height: 1.7; }
   .cannibal-block li a { color: var(--dark-mid); font-family: var(--mono); }
 
+  /* ─── Voice profile editor ───────────────────────────────────────────────── */
+  .voice-profile-grid { }
+  @media (max-width: 860px) {
+    .voice-profile-grid { grid-template-columns: 1fr !important; }
+  }
+  .voice-field { margin-bottom: 16px; }
+  .voice-label {
+    display: block;
+    font-family: 'Barlow', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+  }
+  .voice-hint {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+    line-height: 1.5;
+  }
+  .voice-textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    font-size: 13px;
+    font-family: 'Barlow', sans-serif;
+    color: var(--dark);
+    background: var(--white);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    resize: vertical;
+    line-height: 1.6;
+  }
+  .voice-textarea:focus {
+    outline: none;
+    border-color: var(--green);
+    box-shadow: 0 0 0 2px rgba(40, 171, 131, 0.15);
+  }
+  .voice-select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-family: 'Barlow', sans-serif;
+    color: var(--dark);
+    background: var(--white);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    cursor: pointer;
+  }
+
 </style>
 </head>
 <body>
 
 <nav>
   <div class="nav-title">MMW <span>Site Intelligence</span></div>
-  <div class="nav-badge">Phase 3 — Scout</div>
+  <div class="nav-badge">Phase 4 — Brand Voice</div>
 </nav>
 
 <main>
@@ -543,7 +596,7 @@
     <button class="tab active" data-tab="crawl" onclick="switchTab('crawl', this)">Crawl</button>
     <button class="tab" data-tab="audit"  onclick="switchTab('audit', this)">Audit</button>
     <button class="tab" data-tab="scout"  onclick="switchTab('scout', this)">Scout</button>
-    <button class="tab" data-tab="voice"  disabled title="Coming in phase 4">Brand Voice <span class="tab-badge">Soon</span></button>
+    <button class="tab" data-tab="voice" onclick="switchTab('voice', this)">Brand Voice</button>
   </div>
 
   <!-- ─── CRAWL TAB ─────────────────────────────────────────────────────── -->
@@ -803,11 +856,203 @@
     </div>
   </section>
   <section class="tab-panel" id="panel-voice">
-    <div class="card placeholder">
-      <div class="placeholder-icon">⚙</div>
-      <h3>Brand Voice — coming in phase 4</h3>
-      <p>Analyze approved client content, generate a reusable Brand Voice profile, and expose it via API for Content Engine, Press Release Writer, and the future Blog Writer.</p>
+
+    <!-- Empty state -->
+    <div class="card audit-empty hidden" id="voice-empty">
+      <h3>No completed crawls yet</h3>
+      <p>Run a crawl from the Crawl tab first, then return here to generate a Brand Voice profile.</p>
     </div>
+
+    <!-- Loading state -->
+    <div class="card audit-empty hidden" id="voice-loading">
+      <h3>Loading pages&hellip;</h3>
+    </div>
+
+    <!-- Generating state -->
+    <div class="card hidden" id="voice-generating">
+      <div class="card-title">Generating Brand Voice Profile</div>
+      <div class="card-sub">Claude Opus is analyzing the selected pages. This usually takes 30&ndash;60 seconds.</div>
+      <div id="voice-progress-log" style="margin-top:16px;font-size:13px;font-family:Barlow,sans-serif;color:var(--text-secondary);line-height:1.7;"></div>
+    </div>
+
+    <!-- Main state -->
+    <div id="voice-main" class="hidden">
+
+      <!-- Toolbar -->
+      <div class="card">
+        <div class="audit-toolbar">
+          <div class="audit-context">
+            <div class="audit-context-domain" id="voice-domain">—</div>
+            <div class="audit-context-meta"   id="voice-meta">—</div>
+          </div>
+          <div class="audit-actions">
+            <select class="crawl-select" id="voice-crawl-select" onchange="loadVoicePages(this.value)"></select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Profile editor (shown after generation or when existing profile loads) -->
+      <div id="voice-profile-section" class="hidden">
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:4px;">
+            <div>
+              <div class="card-title" style="margin-bottom:2px;">Brand Voice Profile</div>
+              <div class="card-sub" id="voice-profile-meta"></div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="secondary" onclick="showVoiceState('picker')" style="font-size:12px;padding:7px 14px;">Regenerate</button>
+              <button class="primary" id="voice-save-btn" onclick="saveVoiceProfile()">Save changes</button>
+            </div>
+          </div>
+          <div id="voice-save-status" style="font-size:12px;color:var(--green);margin-top:4px;min-height:18px;"></div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:16px;" class="voice-profile-grid">
+
+            <!-- Left column -->
+            <div>
+              <div class="voice-field">
+                <label class="voice-label">Tone descriptors</label>
+                <div class="voice-hint">One per line (e.g. warm, empowering, clinical-but-approachable)</div>
+                <textarea id="vp-tone" rows="4" class="voice-textarea"></textarea>
+              </div>
+
+              <div class="voice-field">
+                <label class="voice-label">Preferred vocabulary</label>
+                <div class="voice-hint">Words and phrases this brand uses. One per line.</div>
+                <textarea id="vp-preferred" rows="6" class="voice-textarea"></textarea>
+              </div>
+
+              <div class="voice-field">
+                <label class="voice-label">Avoided vocabulary</label>
+                <div class="voice-hint">Off-brand words. One per line.</div>
+                <textarea id="vp-avoided" rows="5" class="voice-textarea"></textarea>
+              </div>
+
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                <div class="voice-field">
+                  <label class="voice-label">Industry specificity</label>
+                  <select id="vp-specificity" class="voice-select">
+                    <option value="low">Low (plain language)</option>
+                    <option value="moderate">Moderate</option>
+                    <option value="high">High (clinical)</option>
+                  </select>
+                </div>
+                <div class="voice-field">
+                  <label class="voice-label">Point of view</label>
+                  <select id="vp-pov" class="voice-select">
+                    <option value="first_person_plural">We / Our team</option>
+                    <option value="second_person">You / Your</option>
+                    <option value="third_person">Third person</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+                <div class="voice-field">
+                  <label class="voice-label">Sentence length</label>
+                  <select id="vp-avg-length" class="voice-select">
+                    <option value="short">Short</option>
+                    <option value="medium">Medium</option>
+                    <option value="long">Long</option>
+                  </select>
+                </div>
+                <div class="voice-field">
+                  <label class="voice-label">Rhythm</label>
+                  <select id="vp-rhythm" class="voice-select">
+                    <option value="varied">Varied</option>
+                    <option value="consistent">Consistent</option>
+                  </select>
+                </div>
+                <div class="voice-field">
+                  <label class="voice-label">Uses lists</label>
+                  <select id="vp-uses-lists" class="voice-select">
+                    <option value="frequently">Frequently</option>
+                    <option value="sparingly">Sparingly</option>
+                    <option value="never">Never</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="voice-field" style="display:flex;align-items:center;gap:10px;">
+                <input type="checkbox" id="vp-uses-questions" style="accent-color:var(--green);width:16px;height:16px;cursor:pointer;">
+                <label for="vp-uses-questions" class="voice-label" style="margin:0;cursor:pointer;">Uses rhetorical questions</label>
+              </div>
+            </div>
+
+            <!-- Right column -->
+            <div>
+              <div class="voice-field">
+                <label class="voice-label">Do examples</label>
+                <div class="voice-hint">Short excerpts that represent the voice well. One per line.</div>
+                <textarea id="vp-do" rows="6" class="voice-textarea"></textarea>
+              </div>
+
+              <div class="voice-field">
+                <label class="voice-label">Don&rsquo;t examples</label>
+                <div class="voice-hint">Phrases that would feel off-brand. One per line.</div>
+                <textarea id="vp-dont" rows="6" class="voice-textarea"></textarea>
+              </div>
+
+              <div class="voice-field">
+                <label class="voice-label">Summary paragraph</label>
+                <div class="voice-hint">Dropped directly into AI system prompts. Be specific about what makes this voice distinctive.</div>
+                <textarea id="vp-summary" rows="7" class="voice-textarea"></textarea>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Page picker (shown before generation) -->
+      <div id="voice-picker-section">
+
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+            <div>
+              <div class="card-title">Select approved brand content</div>
+              <div class="card-sub" id="voice-card-sub">Choose pages that represent this client&rsquo;s authentic voice. Avoid generic landing pages, contact pages, or third-party content.</div>
+            </div>
+            <button class="primary" id="voice-generate-btn" onclick="generateVoice()" disabled>Analyze Voice (0 selected)</button>
+          </div>
+
+          <div class="filter-row" style="justify-content:space-between;gap:12px;margin-top:12px;">
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;flex:1;">
+              <input type="text" id="voice-search" placeholder="Search by URL or title&hellip;" oninput="renderVoiceTable()" style="flex:1;min-width:180px;">
+              <select id="voice-filter-content" onchange="renderVoiceTable()" class="crawl-select">
+                <option value="all">All pages</option>
+                <option value="content">Has content (200+ words)</option>
+                <option value="no-content">Low content</option>
+              </select>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+              <button class="secondary" onclick="voiceSelectDefaults()" style="font-size:12px;padding:7px 14px;">Select defaults</button>
+              <button class="secondary" onclick="voiceSelectAllVisible()" style="font-size:12px;padding:7px 14px;">Select visible</button>
+              <button class="secondary" onclick="voiceDeselectAll()" style="font-size:12px;padding:7px 14px;">Deselect all</button>
+            </div>
+          </div>
+
+          <div class="audit-table-wrap">
+            <table class="audit-table" id="voice-table">
+              <thead>
+                <tr>
+                  <th style="width:38px;text-align:center;cursor:default;">
+                    <input type="checkbox" id="voice-header-cb" title="Toggle visible" onchange="voiceToggleVisible(this.checked)" style="accent-color:var(--green);">
+                  </th>
+                  <th data-sort="url"        data-table="voice">URL</th>
+                  <th data-sort="title"      data-table="voice">Title / H1</th>
+                  <th data-sort="word_count" data-table="voice" class="num">Words</th>
+                  <th data-sort="status_code" data-table="voice" class="num">Status</th>
+                </tr>
+              </thead>
+              <tbody id="voice-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
   </section>
 
 </main>
@@ -827,6 +1072,7 @@
     document.getElementById('panel-' + name).classList.add('active');
     if (name === 'audit') initAuditTab();
     if (name === 'scout') initScoutTab();
+    if (name === 'voice') initVoiceTab();
   }
 
   // ─── Crawl flow ────────────────────────────────────────────────────────
@@ -1557,6 +1803,407 @@
     btn.textContent = `Generate (${count} selected)`;
     btn.disabled    = count === 0;
   }
+
+  // ─── Voice tab ─────────────────────────────────────────────────────────
+
+  const voiceState = {
+    initialized: false,
+    crawlId:     null,
+    crawl:       null,
+    pages:       [],
+    selected:    new Set(),
+    sortKey:     'word_count',
+    sortDir:     'desc',
+    clientId:    null,
+    _visible:    [],
+  };
+
+  async function initVoiceTab() {
+    if (voiceState.initialized) return;
+    voiceState.initialized = true;
+    showVoiceState('loading');
+
+    try {
+      const res = await fetch('/api/crawls?limit=50');
+      const { crawls } = await res.json();
+      if (!crawls || crawls.length === 0) { showVoiceState('empty'); return; }
+      populateVoiceSelect(crawls);
+      await loadVoicePages('latest');
+    } catch (e) {
+      console.error('Voice init failed', e);
+      showVoiceState('empty');
+    }
+  }
+
+  function populateVoiceSelect(crawls) {
+    const sel = document.getElementById('voice-crawl-select');
+    sel.innerHTML = '<option value="latest">Most recent crawl</option>';
+    crawls.forEach(c => {
+      const dom  = (c.clients && c.clients.domain) || 'unknown';
+      const date = (c.finished_at || '').split('T')[0];
+      const opt  = document.createElement('option');
+      opt.value       = c.id;
+      opt.textContent = `${dom} — ${date} (${c.page_count} pages)`;
+      sel.appendChild(opt);
+    });
+  }
+
+  async function loadVoicePages(crawlId) {
+    showVoiceState('loading');
+    try {
+      const [pagesRes, profileRes] = await Promise.all([
+        fetch(`/api/voice/${crawlId}/pages`),
+        fetch(`/api/voice/${crawlId}/profile`),
+      ]);
+
+      if (!pagesRes.ok) throw new Error(((await pagesRes.json().catch(() => ({}))).error) || pagesRes.statusText);
+      const data = await pagesRes.json();
+
+      voiceState.crawlId  = data.crawlId;
+      voiceState.crawl    = data.crawl;
+      voiceState.pages    = data.pages || [];
+      voiceState.selected = new Set(
+        voiceState.pages.filter(p => p.default_checked).map(p => p.url)
+      );
+
+      const c   = data.crawl;
+      const dom = (c.clients && c.clients.domain) || c.target_url || 'unknown';
+      const nam = (c.clients && c.clients.name)   || dom;
+      document.getElementById('voice-domain').textContent = nam;
+      document.getElementById('voice-meta').textContent   =
+        `${dom} · crawled ${(c.finished_at || '').split('T')[0]} · ${voiceState.pages.length} pages`;
+
+      renderVoiceTable();
+      updateVoiceGenBtn();
+
+      // If a profile already exists for this client, show it
+      if (profileRes.ok) {
+        const bv = await profileRes.json();
+        voiceState.clientId = bv.client_id;
+        populateProfileEditor(bv.profile, bv);
+        showVoiceState('profile');
+      } else {
+        showVoiceState('picker');
+      }
+    } catch (e) {
+      console.error('Voice pages load failed', e);
+      showVoiceState('empty');
+    }
+  }
+
+  function showVoiceState(state) {
+    document.getElementById('voice-empty').classList.toggle('hidden',      state !== 'empty');
+    document.getElementById('voice-loading').classList.toggle('hidden',    state !== 'loading');
+    document.getElementById('voice-generating').classList.toggle('hidden', state !== 'generating');
+    document.getElementById('voice-main').classList.toggle('hidden',       state === 'empty' || state === 'loading' || state === 'generating');
+    if (state === 'picker' || state === 'profile') {
+      document.getElementById('voice-picker-section').classList.toggle('hidden',  state !== 'picker');
+      document.getElementById('voice-profile-section').classList.toggle('hidden', state !== 'profile');
+    }
+  }
+
+  function renderVoiceTable() {
+    const search        = (document.getElementById('voice-search').value || '').toLowerCase();
+    const contentFilter = document.getElementById('voice-filter-content').value;
+
+    let rows = voiceState.pages.slice();
+
+    if (search) {
+      rows = rows.filter(p =>
+        (p.url   || '').toLowerCase().includes(search) ||
+        (p.title || '').toLowerCase().includes(search) ||
+        (p.h1    || '').toLowerCase().includes(search)
+      );
+    }
+
+    if (contentFilter === 'content')    rows = rows.filter(p => (p.word_count || 0) >= 200);
+    if (contentFilter === 'no-content') rows = rows.filter(p => (p.word_count || 0) < 200);
+
+    const k   = voiceState.sortKey;
+    const dir = voiceState.sortDir === 'asc' ? 1 : -1;
+    rows.sort((a, b) => {
+      let av = a[k], bv = b[k];
+      if (av == null) av = '';
+      if (bv == null) bv = '';
+      if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+
+    voiceState._visible = rows.map(p => p.url);
+
+    const tbody = document.getElementById('voice-tbody');
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="padding:32px;text-align:center;color:var(--text-muted);">No pages match the current filters.</td></tr>';
+    } else {
+      tbody.innerHTML = rows.map(renderVoiceRow).join('');
+    }
+
+    const sub = document.getElementById('voice-card-sub');
+    const sel = voiceState.selected.size;
+    sub.textContent = `${rows.length} of ${voiceState.pages.length} pages shown · ${sel} selected. Choose pages that represent the client's authentic voice.`;
+
+    updateVoiceHeaderCb();
+
+    document.querySelectorAll('#voice-table thead th[data-sort]').forEach(th => {
+      const arrow = th.querySelector('.sort-arrow');
+      if (arrow) arrow.remove();
+      if (th.dataset.sort === voiceState.sortKey) {
+        const span = document.createElement('span');
+        span.className  = 'sort-arrow';
+        span.textContent = voiceState.sortDir === 'asc' ? '↑' : '↓';
+        th.appendChild(span);
+      }
+    });
+  }
+
+  function renderVoiceRow(p) {
+    const checked      = voiceState.selected.has(p.url) ? 'checked' : '';
+    const status       = p.status_code || 0;
+    const statusClass  = status >= 200 && status < 300 ? 'status-2xx'
+                       : status >= 300 && status < 400 ? 'status-3xx'
+                       : status >= 400 ? 'status-4xx' : 'status-0';
+    const statusLabel  = status === 0 ? 'fail' : status;
+    const displayTitle = (p.h1 || p.title || '');
+    const wc           = p.word_count || 0;
+    const wcStyle      = wc > 0 && wc < 200 ? 'color:var(--amber)' : '';
+
+    return `
+      <tr>
+        <td style="text-align:center;vertical-align:middle;padding:8px 6px;">
+          <input type="checkbox" ${checked} data-url="${escapeHTML(p.url)}"
+            onchange="toggleVoicePage(this.dataset.url, this.checked)"
+            style="accent-color:var(--green);">
+        </td>
+        <td class="url-cell" title="${escapeHTML(p.url)}">
+          <a href="${escapeHTML(p.url)}" target="_blank" rel="noopener">${escapeHTML(truncate(p.url, 55))}</a>
+        </td>
+        <td>${displayTitle ? escapeHTML(truncate(displayTitle, 70)) : '<span style="color:var(--text-muted);font-style:italic;">—</span>'}</td>
+        <td class="num" style="${wcStyle}">${wc}</td>
+        <td class="num ${statusClass}">${statusLabel}</td>
+      </tr>
+    `;
+  }
+
+  function toggleVoicePage(url, checked) {
+    if (checked) voiceState.selected.add(url);
+    else         voiceState.selected.delete(url);
+    updateVoiceGenBtn();
+    updateVoiceHeaderCb();
+    const sub     = document.getElementById('voice-card-sub');
+    const visible = voiceState._visible.length;
+    const total   = voiceState.pages.length;
+    sub.textContent = `${visible} of ${total} pages shown · ${voiceState.selected.size} selected. Choose pages that represent the client's authentic voice.`;
+  }
+
+  function voiceToggleVisible(checked) {
+    voiceState._visible.forEach(url => {
+      if (checked) voiceState.selected.add(url);
+      else         voiceState.selected.delete(url);
+    });
+    renderVoiceTable();
+    updateVoiceGenBtn();
+  }
+
+  function voiceSelectAllVisible() {
+    voiceState._visible.forEach(url => voiceState.selected.add(url));
+    renderVoiceTable();
+    updateVoiceGenBtn();
+  }
+
+  function voiceDeselectAll() {
+    voiceState.selected.clear();
+    renderVoiceTable();
+    updateVoiceGenBtn();
+  }
+
+  function voiceSelectDefaults() {
+    voiceState.selected = new Set(
+      voiceState.pages.filter(p => p.default_checked).map(p => p.url)
+    );
+    renderVoiceTable();
+    updateVoiceGenBtn();
+  }
+
+  function updateVoiceHeaderCb() {
+    const cb = document.getElementById('voice-header-cb');
+    if (!cb) return;
+    const visible  = voiceState._visible;
+    const selCount = visible.filter(u => voiceState.selected.has(u)).length;
+    cb.indeterminate = selCount > 0 && selCount < visible.length;
+    cb.checked       = visible.length > 0 && selCount === visible.length;
+  }
+
+  function updateVoiceGenBtn() {
+    const btn   = document.getElementById('voice-generate-btn');
+    const count = voiceState.selected.size;
+    btn.textContent = `Analyze Voice (${count} selected)`;
+    btn.disabled    = count === 0;
+  }
+
+  async function generateVoice() {
+    const selected = [...voiceState.selected];
+    if (selected.length === 0) return;
+
+    const crawlId = voiceState.crawlId;
+
+    showVoiceState('generating');
+    const logEl = document.getElementById('voice-progress-log');
+    logEl.innerHTML = '';
+
+    const addLog = msg => {
+      const p = document.createElement('p');
+      p.style.margin = '0';
+      p.textContent  = msg;
+      logEl.appendChild(p);
+    };
+
+    addLog('Connecting to server...');
+
+    try {
+      const res = await fetch(`/api/voice/${crawlId}/generate`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ urls: selected }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error || res.statusText);
+      }
+
+      const reader  = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer    = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          let data;
+          try { data = JSON.parse(line.slice(6)); } catch (_) { continue; }
+
+          if (data.type === 'log') {
+            addLog(data.message);
+          } else if (data.type === 'done') {
+            voiceState.clientId = data.clientId;
+            populateProfileEditor(data.profile, null);
+            showVoiceState('profile');
+            return;
+          } else if (data.type === 'error') {
+            throw new Error(data.message);
+          }
+        }
+      }
+    } catch (e) {
+      alert('Voice generation failed: ' + e.message);
+      showVoiceState('picker');
+    }
+  }
+
+  // ─── Profile editor ───────────────────────────────────────────────────────
+
+  function populateProfileEditor(profile, bvRow) {
+    const arr = v => Array.isArray(v) ? v.join('\n') : (v || '');
+
+    document.getElementById('vp-tone').value      = arr(profile.tone_descriptors);
+    document.getElementById('vp-preferred').value = arr(profile.vocabulary && profile.vocabulary.preferred_terms);
+    document.getElementById('vp-avoided').value   = arr(profile.vocabulary && profile.vocabulary.avoided_terms);
+    document.getElementById('vp-do').value         = arr(profile.do_examples);
+    document.getElementById('vp-dont').value       = arr(profile.dont_examples);
+    document.getElementById('vp-summary').value    = profile.summary_paragraph || '';
+
+    const spec = (profile.vocabulary && profile.vocabulary.industry_specificity) || 'moderate';
+    document.getElementById('vp-specificity').value  = spec;
+    document.getElementById('vp-avg-length').value   = (profile.sentence_structure && profile.sentence_structure.avg_length)   || 'medium';
+    document.getElementById('vp-rhythm').value        = (profile.sentence_structure && profile.sentence_structure.rhythm)        || 'varied';
+    document.getElementById('vp-uses-lists').value    = (profile.sentence_structure && profile.sentence_structure.uses_lists)    || 'sparingly';
+    document.getElementById('vp-pov').value           = profile.point_of_view || 'second_person';
+    document.getElementById('vp-uses-questions').checked = !!(profile.sentence_structure && profile.sentence_structure.uses_questions);
+
+    const meta = document.getElementById('voice-profile-meta');
+    if (bvRow) {
+      const edited = bvRow.human_edited ? ' · edited' : '';
+      const date   = (bvRow.generated_at || '').split('T')[0];
+      meta.textContent = `Generated ${date}${edited} · ${(bvRow.source_urls || []).length} source pages`;
+    } else {
+      meta.textContent = 'Just generated — not yet saved';
+    }
+
+    document.getElementById('voice-save-status').textContent = '';
+  }
+
+  function collectProfile() {
+    const lines = id => document.getElementById(id).value
+      .split('\n').map(s => s.trim()).filter(Boolean);
+
+    return {
+      tone_descriptors: lines('vp-tone'),
+      vocabulary: {
+        preferred_terms:       lines('vp-preferred'),
+        avoided_terms:         lines('vp-avoided'),
+        industry_specificity:  document.getElementById('vp-specificity').value,
+      },
+      sentence_structure: {
+        avg_length:     document.getElementById('vp-avg-length').value,
+        rhythm:         document.getElementById('vp-rhythm').value,
+        uses_questions: document.getElementById('vp-uses-questions').checked,
+        uses_lists:     document.getElementById('vp-uses-lists').value,
+      },
+      point_of_view:     document.getElementById('vp-pov').value,
+      do_examples:       lines('vp-do'),
+      dont_examples:     lines('vp-dont'),
+      summary_paragraph: document.getElementById('vp-summary').value.trim(),
+    };
+  }
+
+  async function saveVoiceProfile() {
+    const clientId = voiceState.clientId;
+    if (!clientId) { alert('No profile to save yet.'); return; }
+
+    const btn    = document.getElementById('voice-save-btn');
+    const status = document.getElementById('voice-save-status');
+    btn.disabled    = true;
+    status.textContent = 'Saving...';
+    status.style.color = 'var(--text-muted)';
+
+    try {
+      const profile = collectProfile();
+      const res = await fetch(`/api/voice/${clientId}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ profile }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error || res.statusText);
+      }
+      status.textContent = 'Saved.';
+      status.style.color = 'var(--green)';
+    } catch (e) {
+      status.textContent = 'Save failed: ' + e.message;
+      status.style.color = 'var(--red)';
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  // Wire up sort handlers for the Voice table
+  document.querySelectorAll('#voice-table thead th[data-sort]').forEach(th => {
+    th.style.cursor = 'pointer';
+    th.addEventListener('click', () => {
+      const k = th.dataset.sort;
+      if (voiceState.sortKey === k) voiceState.sortDir = voiceState.sortDir === 'asc' ? 'desc' : 'asc';
+      else { voiceState.sortKey = k; voiceState.sortDir = 'asc'; }
+      renderVoiceTable();
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
 
   async function generateScout() {
     const selected  = [...scoutState.selected];

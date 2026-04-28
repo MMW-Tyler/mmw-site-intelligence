@@ -24,11 +24,13 @@ const path    = require('path');
 
 const JSZip  = require('jszip');
 
-const engine = require('./crawl/engine');
-const store  = require('./crawl/store');
-const jobs   = require('./jobs');
-const audit  = require('./analyzers/audit');
-const scout  = require('./analyzers/scout');
+const engine       = require('./crawl/engine');
+const store        = require('./crawl/store');
+const jobs         = require('./jobs');
+const audit        = require('./analyzers/audit');
+const scout        = require('./analyzers/scout');
+const voice        = require('./analyzers/voice');
+const brandVoiceApi = require('./api/brand-voice');
 
 const app  = express();
 const PORT = parseInt(process.env.PORT, 10) || 3000;
@@ -289,6 +291,109 @@ app.post('/api/scout/:crawlId/generate', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// ─── Voice endpoints ──────────────────────────────────────────────────────────
+// Page picker uses the same lightweight metadata as Scout.
+// Profile fetch returns any existing brand voice for the crawl's client.
+// Generate streams SSE while Claude works, then saves the result to brand_voices.
+
+app.get('/api/voice/:crawlId/pages', async (req, res) => {
+  try {
+    const crawl = await resolveCrawl(req.params.crawlId);
+    if (!crawl) return res.status(404).json({ error: 'Crawl not found' });
+    const pages    = await store.getCrawlPagesMeta(crawl.id);
+    const withFlags = pages.map(p => ({ ...p, default_checked: voice.shouldDefaultCheck(p) }));
+    res.json({ crawlId: crawl.id, crawl, pages: withFlags });
+  } catch (err) {
+    console.error('[voice pages] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/voice/:crawlId/profile', async (req, res) => {
+  try {
+    const crawl = await resolveCrawl(req.params.crawlId);
+    if (!crawl) return res.status(404).json({ error: 'Crawl not found' });
+    const bv = await store.getBrandVoiceForCrawl(crawl.id);
+    if (!bv) return res.status(404).json({ error: 'No brand voice profile yet' });
+    res.json(bv);
+  } catch (err) {
+    console.error('[voice profile] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Generation streams SSE back to the browser while Claude works.
+// Response body is newline-delimited "data: <json>\n\n" events.
+// Event types: log { message }, done { profile, clientId }, error { message }
+app.post('/api/voice/:crawlId/generate', async (req, res) => {
+  const { urls } = req.body || {};
+  if (!Array.isArray(urls) || urls.length === 0) {
+    return res.status(400).json({ error: 'urls array is required and must be non-empty' });
+  }
+
+  let crawl;
+  try {
+    crawl = await resolveCrawl(req.params.crawlId);
+    if (!crawl) return res.status(404).json({ error: 'Crawl not found' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+
+  // Switch to SSE so the browser sees progress events and the connection
+  // stays open while Claude works (avoids proxy timeout issues).
+  res.writeHead(200, {
+    'Content-Type':  'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection':    'keep-alive',
+  });
+
+  const emit = (type, data) => {
+    try { res.write(`data: ${JSON.stringify({ type, ...data })}\n\n`); } catch (_) {}
+  };
+
+  try {
+    emit('log', { message: 'Fetching selected pages from database...' });
+    const pages = await store.getCrawlPagesByUrls(crawl.id, urls);
+
+    if (pages.length === 0) {
+      emit('error', { message: 'No matching pages found in this crawl for the provided URLs.' });
+      return res.end();
+    }
+
+    const profile = await voice.analyzeVoice(pages, emit);
+
+    emit('log', { message: 'Saving profile...' });
+    await store.upsertBrandVoice(crawl.client_id, crawl.id, urls, profile);
+
+    emit('done', { profile, clientId: crawl.client_id });
+  } catch (err) {
+    console.error('[voice generate] error:', err);
+    emit('error', { message: err.message });
+  }
+
+  res.end();
+});
+
+app.patch('/api/voice/:clientId', async (req, res) => {
+  const { profile } = req.body || {};
+  if (!profile || typeof profile !== 'object') {
+    return res.status(400).json({ error: 'profile object is required' });
+  }
+  try {
+    await store.updateBrandVoiceProfile(req.params.clientId, profile);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[voice patch] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Brand Voice cross-tool API (authenticated) ───────────────────────────────
+// Mounted here so /api/brand-voice/:clientId and /api/brand-voice/by-domain/:domain
+// are both available. The router handles auth internally.
+
+app.use('/api/brand-voice', brandVoiceApi);
 
 // ─── Start ───────────────────────────────────────────────────────────────────
 

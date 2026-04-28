@@ -27,7 +27,7 @@ The merge:
 
 ## The four-phase build plan
 
-The project is being built in four phases. Each phase is independently shippable — when a phase finishes, the tool is still useful, just with fewer features. Phases 1, 2, and 3 are done; phase 4 is the remaining work.
+The project is being built in four phases. Each phase is independently shippable — when a phase finishes, the tool is still useful, just with fewer features. All four phases are done.
 
 ### Phase 1 — Crawl service + skeleton (DONE)
 
@@ -78,7 +78,7 @@ The project is being built in four phases. Each phase is independently shippable
 - New store function: `getCrawlPagesMeta(crawlId)` — selects only the columns needed for the picker (no extracted_body/text), keeping the response small.
 - Scout tab UI: crawl-switcher dropdown (same crawl list as Audit), site name input (auto-populated from client name), batch size input (default 100), Generate button with selected count. Page picker with checkboxes, search, content filter, and Select defaults / Select visible / Deselect all buttons. Header checkbox with indeterminate state. Sortable columns.
 
-### Phase 4 — Brand Voice tab + cross-tool API (NEXT)
+### Phase 4 — Brand Voice tab + cross-tool API (DONE)
 
 **Goal:** Build the Brand Voice analyzer and expose it as an API so other MMW tools (Content Engine, Press Release Writer, future Blog Writer) can pull a client's brand voice profile into their generation prompts. This is the highest-leverage phase — every downstream content tool gets better once Brand Voice exists.
 
@@ -110,13 +110,14 @@ The project is being built in four phases. Each phase is independently shippable
 - The API: `GET /api/brand-voice/:client_id` and `GET /api/brand-voice/by-domain/:domain` return the profile as JSON. **Auth is required for these endpoints** (see Auth section below). Other tools call this and inject `profile.summary_paragraph` plus the do/don't examples into their generation prompts.
 - One profile per client (the schema already has a unique index on `client_id`). Regenerating overwrites.
 
-**Files this phase will touch:**
-- New: `analyzers/voice.js` — orchestrates the voice analysis.
-- New: `prompts/voice-analysis.js` — the analysis prompt(s). **Follow the Content Engine's `prompts.js` pattern** — prompts isolated from server logic so they can be edited without touching code paths.
-- New: `prompts/voice-profile.js` — prompt for synthesizing analysis output into the structured profile.
-- New: `api/brand-voice.js` — the cross-tool API endpoint(s).
-- Modify: `server.js`, `public/index.html`, `README.md`.
-- Add: auth middleware (see below).
+**What was delivered:**
+- Voice analyzer (`analyzers/voice.js`) — orchestrates the Anthropic Claude API call. Takes pages with `extracted_text`, streams via `client.messages.stream()` using `claude-opus-4-7` with `thinking: {type: "adaptive"}` and prompt caching on the system prompt. Returns parsed profile JSON. No DB access.
+- Analysis prompt (`prompts/voice-analysis.js`) — system prompt describing the Brand Voice profile schema plus field guidance; `buildUserMessage()` formats page content as labeled text blocks. Isolated here so prompts can be iterated without touching code paths.
+- Three new voice endpoints in `server.js`: `GET /api/voice/:crawlId/pages` (page picker metadata with `default_checked` using `VOICE_WORD_THRESHOLD = 200`), `GET /api/voice/:crawlId/profile` (fetch existing profile for the crawl's client), `POST /api/voice/:crawlId/generate` (SSE stream — emits `log`/`done`/`error` events while Claude works, then upserts to `brand_voices`), `PATCH /api/voice/:clientId` (update profile, sets `human_edited = true`).
+- Cross-tool API (`api/brand-voice.js`, mounted at `/api/brand-voice`) — `GET /api/brand-voice/:clientId` and `GET /api/brand-voice/by-domain/:domain`. Requires `X-MMW-API-Key` header matching `MMW_INTERNAL_API_KEY` env var. Auth middleware fails closed (503) if the env var is not configured.
+- New store functions: `getCrawlPagesByUrls`, `upsertBrandVoice`, `updateBrandVoiceProfile`, `getBrandVoice`, `getBrandVoiceByDomain`, `getBrandVoiceForCrawl`.
+- Voice tab UI: same crawl-switcher pattern as Audit/Scout. Page picker with `default_checked` (2xx, indexable, 200+ words, no cart/login/admin URLs). On load, automatically shows the existing profile if one exists for the crawl's client. Generation streams SSE events to a progress log (via `fetch` + `ReadableStream`), then shows the profile editor when done. Profile editor: textareas (one value per line) for arrays, selects for enums, checkbox for `uses_questions`, large textarea for `summary_paragraph`. Save calls `PATCH /api/voice/:clientId`, sets `human_edited = true`. Regenerate button goes back to page picker.
+- `@anthropic-ai/sdk` added to `package.json` dependencies.
 
 **Cross-tool integration (after phase 4 is shipped):**
 The Content Engine and Press Release Writer repos will need a small update: when generating content for a known client, fetch the brand voice profile via this app's API and inject it into the prompt. That work happens in those repos, not this one — phase 4 just provides the API.
@@ -187,11 +188,13 @@ crawl/
 analyzers/
   audit.js                — Phase 2: stats, issue flagging, cannibalization detection, CSV builder
   scout.js                — Phase 3: default-check heuristic, Markdown content block formatting, zip manifest
-  voice.js                — Phase 4: TODO — Brand voice analysis orchestration
+  voice.js                — Phase 4: Brand Voice analysis orchestration (Claude API streaming)
 
-prompts/                  — Phase 4: TODO — voice-analysis.js, voice-profile.js
+prompts/
+  voice-analysis.js       — Phase 4: system prompt + buildUserMessage for Claude voice analysis
 
-api/                      — Phase 4: TODO — brand-voice.js (cross-tool authenticated endpoints)
+api/
+  brand-voice.js          — Phase 4: authenticated cross-tool GET endpoints (X-MMW-API-Key)
 
 migrations/
   001_initial_schema.sql  — clients, crawls, crawl_pages, brand_voices tables + trigger
@@ -228,9 +231,8 @@ Required env vars:
 - `SUPABASE_SERVICE_ROLE_KEY` — the **service role key**, NOT the anon key. We use service role because there's no user-level auth yet; we trust the server.
 - `PORT` — Render sets this automatically; only used for local dev.
 
-Future env vars (when phase 4 lands):
-- `ANTHROPIC_API_KEY` — for voice analysis prompts
-- `MMW_INTERNAL_API_KEY` — shared secret for the cross-tool Brand Voice API
+- `ANTHROPIC_API_KEY` — for voice analysis (Claude Opus API calls).
+- `MMW_INTERNAL_API_KEY` — shared secret for the cross-tool Brand Voice API. Other tools pass this in the `X-MMW-API-Key` header.
 
 ---
 
@@ -267,10 +269,16 @@ Render's free tier sleeps after 15 min of inactivity. First request after sleep 
 - `GET /api/scout/:crawlId/pages` — `:crawlId` can be a UUID or `"latest"`. Returns `{ crawlId, crawl, pages: [...with default_checked flag] }`. Page objects include: `url, status_code, title, h1, word_count, indexability, default_checked`.
 - `POST /api/scout/:crawlId/generate` — body: `{ urls: [...], siteName, batchSize }`. Returns a `.zip` download containing `batch-001.md`, `batch-002.md`, … and `manifest.md`. Filename: `scout-{domain}-{date}.zip`.
 
-### Brand Voice (phase 4) — to be added
-- `POST /api/voice/:crawlId/generate` — body: `{ urls: [...] }`. Internal endpoint, no auth needed (used by the UI on the same origin).
-- `PATCH /api/voice/:clientId` — edit a profile after generation.
-- `GET /api/brand-voice/:clientId` and `GET /api/brand-voice/by-domain/:domain` — **authenticated** cross-tool API. Other MMW tools call these.
+### Voice (phase 4 — internal, no auth)
+- `GET /api/voice/:crawlId/pages` — `:crawlId` can be UUID or `"latest"`. Returns `{ crawlId, crawl, pages: [...with default_checked] }`. Uses 200-word threshold for default selection.
+- `GET /api/voice/:crawlId/profile` — returns existing brand voice profile for the crawl's client. 404 if none yet.
+- `POST /api/voice/:crawlId/generate` — body: `{ urls: [...] }`. Returns SSE stream with events `log { message }`, `done { profile, clientId }`, `error { message }`. Saves to `brand_voices` on completion.
+- `PATCH /api/voice/:clientId` — body: `{ profile }`. Updates profile, sets `human_edited = true`.
+
+### Brand Voice API (phase 4 — authenticated cross-tool)
+Requires `X-MMW-API-Key: <MMW_INTERNAL_API_KEY>` header.
+- `GET /api/brand-voice/:clientId` — returns full `brand_voices` row with client info joined.
+- `GET /api/brand-voice/by-domain/:domain` — same, looked up by client domain.
 
 ---
 

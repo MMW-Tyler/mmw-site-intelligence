@@ -284,6 +284,110 @@ async function getCrawlPagesMeta(crawlId) {
 }
 
 /**
+ * Fetch full page data (including extracted_text) for a specific set of URLs
+ * within a crawl. Used by the voice generation endpoint.
+ */
+async function getCrawlPagesByUrls(crawlId, urls) {
+  const sb = getClient();
+  const { data, error } = await sb
+    .from('crawl_pages')
+    .select('id, url, h1, title, extracted_text, word_count')
+    .eq('crawl_id', crawlId)
+    .in('url', urls);
+  if (error) throw error;
+  return data || [];
+}
+
+// ─── Brand voices ─────────────────────────────────────────────────────────────
+
+/**
+ * Insert or update the brand voice profile for a client. One profile per client —
+ * re-running voice analysis overwrites the previous one.
+ */
+async function upsertBrandVoice(clientId, crawlId, sourceUrls, profile) {
+  const sb = getClient();
+  const { error } = await sb
+    .from('brand_voices')
+    .upsert(
+      {
+        client_id:    clientId,
+        crawl_id:     crawlId,
+        source_urls:  sourceUrls,
+        profile:      profile,
+        human_edited: false,
+        generated_at: new Date().toISOString(),
+        updated_at:   new Date().toISOString(),
+      },
+      { onConflict: 'client_id' }
+    );
+  if (error) throw error;
+}
+
+/**
+ * Update an existing brand voice profile (after human editing in the UI).
+ * Sets human_edited = true and bumps updated_at.
+ */
+async function updateBrandVoiceProfile(clientId, profile) {
+  const sb = getClient();
+  const { error } = await sb
+    .from('brand_voices')
+    .update({
+      profile:      profile,
+      human_edited: true,
+      updated_at:   new Date().toISOString(),
+    })
+    .eq('client_id', clientId);
+  if (error) throw error;
+}
+
+/**
+ * Get the brand voice profile for a client (by client_id).
+ */
+async function getBrandVoice(clientId) {
+  const sb = getClient();
+  const { data, error } = await sb
+    .from('brand_voices')
+    .select('*, clients!inner(domain, name)')
+    .eq('client_id', clientId)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Get the brand voice profile for a client by domain.
+ */
+async function getBrandVoiceByDomain(domain) {
+  const sb = getClient();
+  const norm = normalizeDomain(domain);
+  const { data, error } = await sb
+    .from('brand_voices')
+    .select('*, clients!inner(domain, name)')
+    .eq('clients.domain', norm)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Get the brand voice profile for the client that owns the given crawl.
+ * Returns null if no profile exists yet.
+ */
+async function getBrandVoiceForCrawl(crawlId) {
+  const sb = getClient();
+  // Get the client_id for this crawl first
+  const { data: crawl, error: crawlErr } = await sb
+    .from('crawls')
+    .select('client_id')
+    .eq('id', crawlId)
+    .maybeSingle();
+  if (crawlErr) throw crawlErr;
+  if (!crawl) return null;
+
+  return getBrandVoice(crawl.client_id);
+}
+
+/**
  * Returns a list of all finished crawls, newest first, with client info.
  * Used to populate any "switch to a different crawl" dropdown.
  */
@@ -312,6 +416,12 @@ module.exports = {
   getLatestCrawlForDomain,
   getCrawlPages,
   getCrawlPagesMeta,
+  getCrawlPagesByUrls,
   getMostRecentFinishedCrawl,
   listFinishedCrawls,
+  upsertBrandVoice,
+  updateBrandVoiceProfile,
+  getBrandVoice,
+  getBrandVoiceByDomain,
+  getBrandVoiceForCrawl,
 };
