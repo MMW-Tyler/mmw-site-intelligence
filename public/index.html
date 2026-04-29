@@ -4202,6 +4202,319 @@
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SITEMAP OPTIMIZER TAB
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const sitemapState = {
+    xmlFile:     null,  // File object
+    csvFile:     null,  // File object
+    decisions:   [],
+    gscOnly:     [],
+    analysis:    null,
+    reportMd:    '',
+  };
+
+  function initSitemapTab() {
+    // Populate client dropdown
+    const sel = document.getElementById('sm-client-select');
+    if (sel && sel.options.length <= 1) {
+      // Re-use clientsState if loaded, else fetch
+      const populate = (clients) => {
+        sel.innerHTML = '<option value="">— No client —</option>';
+        clients.forEach(c => {
+          const opt = document.createElement('option');
+          opt.value = c.id;
+          opt.textContent = c.name;
+          sel.appendChild(opt);
+        });
+      };
+      if (clientsState.clients.length > 0) {
+        populate(clientsState.clients);
+      } else {
+        apiFetch('/api/clients').then(r => r.json()).then(d => populate(d.clients || [])).catch(() => {});
+      }
+    }
+  }
+
+  function handleSitemapFile(input) {
+    const file = input.files[0];
+    if (!file) return;
+    sitemapState.xmlFile = file;
+    const zone = document.getElementById('sm-xml-zone');
+    document.getElementById('sm-xml-name').textContent = file.name + ` (${(file.size / 1024).toFixed(0)} KB)`;
+    zone.classList.add('has-file');
+    updateSitemapReadyState();
+  }
+
+  function handleGscFile(input) {
+    const file = input.files[0];
+    if (!file) return;
+    sitemapState.csvFile = file;
+    const zone = document.getElementById('sm-csv-zone');
+    document.getElementById('sm-csv-name').textContent = file.name + ` (${(file.size / 1024).toFixed(0)} KB)`;
+    zone.classList.add('has-file');
+    updateSitemapReadyState();
+  }
+
+  function updateSitemapReadyState() {
+    const btn = document.getElementById('sm-analyze-btn');
+    const status = document.getElementById('sm-file-status');
+    if (sitemapState.xmlFile && sitemapState.csvFile) {
+      btn.disabled = false;
+      status.textContent = 'Ready to analyze';
+    } else {
+      btn.disabled = true;
+      status.textContent = !sitemapState.xmlFile ? 'Upload sitemap XML to continue'
+                         : 'Upload GSC CSV to continue';
+    }
+  }
+
+  // ── File reading helper ─────────────────────────────────────────────────────
+  function readFileAsBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        // reader.result is "data:...;base64,<actual_b64>"
+        const b64 = reader.result.split(',')[1];
+        resolve(b64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // ── Main analysis function ─────────────────────────────────────────────────
+  async function analyzeSitemap() {
+    const btn = document.getElementById('sm-analyze-btn');
+    btn.disabled = true; btn.textContent = 'Analyzing…';
+
+    document.getElementById('sitemap-upload-view').classList.add('hidden');
+    document.getElementById('sitemap-progress-view').classList.remove('hidden');
+    document.getElementById('sitemap-results-view').classList.add('hidden');
+    document.getElementById('sm-log').innerHTML = '';
+
+    const smLog = (msg) => {
+      const el = document.getElementById('sm-log');
+      el.innerHTML += `<div class="log-line">${escapeHTML(msg)}</div>`;
+      el.scrollTop = el.scrollHeight;
+    };
+
+    try {
+      smLog('Reading files…');
+      const [xmlB64, csvB64] = await Promise.all([
+        readFileAsBase64(sitemapState.xmlFile),
+        readFileAsBase64(sitemapState.csvFile),
+      ]);
+
+      const clientId = document.getElementById('sm-client-select').value || null;
+
+      const res = await apiFetch('/api/sitemap/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sitemapXml: xmlB64, gscCsv: csvB64, clientId }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error || res.statusText);
+      }
+
+      // SSE stream reading — same pattern as other tabs
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let gotDone = false;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop();
+        for (const part of parts) {
+          const lines = part.split('\n');
+          const eventLine = lines.find(l => l.startsWith('event:'));
+          const dataLine  = lines.find(l => l.startsWith('data:'));
+          if (!dataLine) continue;
+          const eventType = eventLine ? eventLine.replace('event:', '').trim() : 'message';
+          let data;
+          try { data = JSON.parse(dataLine.replace('data:', '').trim()); } catch (_) { continue; }
+
+          if (eventType === 'log')      smLog(data.message);
+          if (eventType === 'stats')    { /* stored in done payload */ }
+          if (eventType === 'analysis') { sitemapState.analysis = data.analysis; }
+          if (eventType === 'error')    { throw new Error(data.message); }
+          if (eventType === 'done') {
+            gotDone = true;
+            sitemapState.decisions = data.decisions || [];
+            sitemapState.gscOnly   = data.gscOnly   || [];
+            sitemapState.analysis  = data.analysis  || sitemapState.analysis;
+            sitemapState.reportMd  = sitemapState.analysis?.report_markdown || '';
+          }
+        }
+      }
+
+      if (!gotDone) throw new Error('Analysis stream ended unexpectedly. Please try again.');
+
+      smLog('Analysis complete.');
+      renderSitemapResults();
+      document.getElementById('sitemap-progress-view').classList.add('hidden');
+      document.getElementById('sitemap-results-view').classList.remove('hidden');
+
+    } catch (e) {
+      smLog('Error: ' + e.message);
+      document.getElementById('sitemap-upload-view').classList.remove('hidden');
+      document.getElementById('sitemap-progress-view').classList.add('hidden');
+      btn.disabled = false; btn.textContent = 'Analyze Sitemap';
+      alert('Analysis failed: ' + e.message);
+    }
+  }
+
+  // ── Render results ─────────────────────────────────────────────────────────
+  function renderSitemapResults() {
+    const decisions = sitemapState.decisions;
+    const analysis  = sitemapState.analysis || {};
+
+    // Strategy summary
+    document.getElementById('sm-strategy-text').textContent = analysis.strategy_summary || '';
+    document.getElementById('sm-thresholds-text').textContent = analysis.thresholds_used
+      ? 'Thresholds: ' + analysis.thresholds_used : '';
+    document.getElementById('sm-estimated-impact').textContent = analysis.estimated_impact || '';
+
+    // Tier grid
+    const tierLabels = { hv: 'High-Value', performing: 'Performing', low: 'Low-Traffic', invisible: 'Invisible', ghost: 'Ghost', dead: 'Dead', sitemap_only: 'Sitemap-Only' };
+    const tierClass  = { hv: 'keep', performing: 'keep', low: 'review', invisible: 'review', ghost: 'cut', dead: 'cut', sitemap_only: 'review' };
+    const tierCounts = {};
+    decisions.forEach(d => { tierCounts[d.tier] = (tierCounts[d.tier] || 0) + 1; });
+
+    document.getElementById('sm-tier-grid').innerHTML = Object.keys(tierLabels).map(t => {
+      const count = tierCounts[t] || 0;
+      return `<div class="tier-card ${tierClass[t]}">
+        <div class="tier-card-label">${tierLabels[t]}</div>
+        <div class="tier-card-count">${count}</div>
+      </div>`;
+    }).join('');
+
+    renderSitemapTable();
+  }
+
+  // ── Table rendering (with filter + pagination) ────────────────────────────
+  const SM_PAGE_SIZE = 100;
+  let smTablePage = 0;
+
+  function renderSitemapTable() {
+    smTablePage = 0;
+    renderSitemapTablePage();
+  }
+
+  function renderSitemapTablePage() {
+    const filterText     = (document.getElementById('sm-filter-text')?.value || '').toLowerCase();
+    const filterDecision = document.getElementById('sm-filter-decision')?.value || '';
+    const filterTier     = document.getElementById('sm-filter-tier')?.value || '';
+
+    const filtered = sitemapState.decisions.filter(d => {
+      if (filterText     && !d.url.toLowerCase().includes(filterText)) return false;
+      if (filterDecision && d.decision !== filterDecision) return false;
+      if (filterTier     && d.tier !== filterTier) return false;
+      return true;
+    });
+
+    const total  = filtered.length;
+    const start  = smTablePage * SM_PAGE_SIZE;
+    const paged  = filtered.slice(start, start + SM_PAGE_SIZE);
+
+    const tierLabels = { hv: 'High-Value', performing: 'Performing', low: 'Low-Traffic', invisible: 'Invisible', ghost: 'Ghost', dead: 'Dead', sitemap_only: 'Sitemap-Only' };
+
+    document.getElementById('sm-decisions-sub').textContent =
+      `${filtered.length} of ${sitemapState.decisions.length} pages · ` +
+      `keep=${sitemapState.decisions.filter(d=>d.decision==='keep').length}, ` +
+      `review=${sitemapState.decisions.filter(d=>d.decision==='review').length}, ` +
+      `cut=${sitemapState.decisions.filter(d=>d.decision==='cut').length}`;
+
+    document.getElementById('sm-decisions-tbody').innerHTML = paged.map((d, i) => {
+      const globalIdx = sitemapState.decisions.indexOf(d);
+      const urlDisplay = d.url.replace(/^https?:\/\/[^/]+/, '') || '/';
+      return `<tr>
+        <td title="${escapeHTML(d.url)}" style="max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHTML(urlDisplay)}</td>
+        <td><span class="tier-badge">${escapeHTML(tierLabels[d.tier] || d.tier)}</span></td>
+        <td><span class="decision-badge ${d.decision}">${d.decision}</span></td>
+        <td class="num">${d.clicks ?? '—'}</td>
+        <td class="num">${d.impressions ?? '—'}</td>
+        <td class="num">${d.position ? d.position.toFixed(1) : '—'}</td>
+        <td>
+          <select style="font-size:11px;padding:2px 6px;border:1px solid var(--border-strong);border-radius:4px;font-family:'Barlow',sans-serif;"
+            onchange="overrideSitemapDecision(${globalIdx}, this.value)">
+            <option value="keep"   ${d.decision==='keep'  ?'selected':''}>Keep</option>
+            <option value="review" ${d.decision==='review'?'selected':''}>Review</option>
+            <option value="cut"    ${d.decision==='cut'   ?'selected':''}>Cut</option>
+          </select>
+        </td>
+      </tr>`;
+    }).join('');
+
+    // Pagination
+    const totalPages = Math.ceil(total / SM_PAGE_SIZE);
+    document.getElementById('sm-table-pagination').innerHTML = totalPages <= 1 ? '' :
+      `Showing ${start + 1}–${Math.min(start + SM_PAGE_SIZE, total)} of ${total}
+      ${smTablePage > 0 ? `<button class="secondary" style="margin:0 6px;padding:4px 12px;font-size:12px;" onclick="smTablePage--;renderSitemapTablePage()">← Prev</button>` : ''}
+      ${smTablePage < totalPages - 1 ? `<button class="secondary" style="margin:0 6px;padding:4px 12px;font-size:12px;" onclick="smTablePage++;renderSitemapTablePage()">Next →</button>` : ''}`;
+  }
+
+  function overrideSitemapDecision(idx, newDecision) {
+    if (sitemapState.decisions[idx]) {
+      sitemapState.decisions[idx].decision = newDecision;
+      // Re-render the sub stats line without re-rendering the full table
+      const kept     = sitemapState.decisions.filter(d=>d.decision==='keep').length;
+      const reviewed = sitemapState.decisions.filter(d=>d.decision==='review').length;
+      const cut      = sitemapState.decisions.filter(d=>d.decision==='cut').length;
+      document.getElementById('sm-decisions-sub').textContent =
+        `${sitemapState.decisions.length} pages · keep=${kept}, review=${reviewed}, cut=${cut}`;
+    }
+  }
+
+  // ── Export ─────────────────────────────────────────────────────────────────
+  async function exportSitemap(format) {
+    const siteUrl = sitemapState.decisions.length > 0
+      ? new URL(sitemapState.decisions[0].url).origin
+      : '';
+    try {
+      const res = await apiFetch('/api/sitemap/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          decisions: sitemapState.decisions,
+          format,
+          siteUrl,
+          reportMarkdown: sitemapState.reportMd || '',
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || res.statusText);
+      const blob = await res.blob();
+      const ext  = { xml: '.xml', csv: '.csv', report: '.md' }[format];
+      const name = { xml: 'proposed-sitemap', csv: 'sitemap-decisions', report: 'sitemap-report' }[format];
+      triggerDownload(name + ext, await blob.text(),
+        { xml: 'application/xml', csv: 'text/csv', report: 'text/markdown' }[format]);
+    } catch (e) {
+      alert('Export failed: ' + e.message);
+    }
+  }
+
+  function resetSitemapTool() {
+    sitemapState.xmlFile = sitemapState.csvFile = null;
+    sitemapState.decisions = []; sitemapState.analysis = null; sitemapState.reportMd = '';
+    document.getElementById('sm-xml-name').textContent = 'Click to upload sitemap.xml';
+    document.getElementById('sm-csv-name').textContent = 'Click to upload GSC export';
+    document.getElementById('sm-xml-zone').classList.remove('has-file');
+    document.getElementById('sm-csv-zone').classList.remove('has-file');
+    document.getElementById('sm-xml-input').value = '';
+    document.getElementById('sm-csv-input').value = '';
+    document.getElementById('sitemap-upload-view').classList.remove('hidden');
+    document.getElementById('sitemap-results-view').classList.add('hidden');
+    document.getElementById('sitemap-progress-view').classList.add('hidden');
+    updateSitemapReadyState();
+  }
+
 </script>
 
 </body>
