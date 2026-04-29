@@ -1360,6 +1360,144 @@ app.post('/api/optimize/:crawlId/schema/push', async (req, res) => {
   }
 });
 
+// ─── Sitemap Optimizer ────────────────────────────────────────────────────────
+
+// POST /api/sitemap/analyze — SSE: parse sitemap + GSC CSV, tier pages, run Claude analysis
+app.post('/api/sitemap/analyze', async (req, res) => {
+  const { sitemapXml: sitemapB64, gscCsv: gscB64, clientId } = req.body || {};
+  if (!sitemapB64) return res.status(400).json({ error: 'sitemapXml is required' });
+  if (!gscB64)    return res.status(400).json({ error: 'gscCsv is required' });
+
+  const emit = sseEmitter(res);
+
+  try {
+    // 1. Decode
+    emit('log', { message: 'Parsing sitemap XML...' });
+    const xmlString = Buffer.from(sitemapB64, 'base64').toString('utf8');
+    const csvString = Buffer.from(gscB64, 'base64').toString('utf8');
+
+    let sitemapEntries;
+    try {
+      sitemapEntries = sitemapAnalyzer.parseSitemapXml(xmlString);
+    } catch (e) {
+      emit('error', { message: 'Sitemap parse error: ' + e.message }); res.end(); return;
+    }
+    emit('log', { message: `Parsed ${sitemapEntries.length} URLs from sitemap.` });
+
+    // 2. Parse GSC
+    emit('log', { message: 'Parsing GSC CSV...' });
+    let gscRows;
+    try {
+      gscRows = sitemapAnalyzer.parseGscCsv(csvString);
+    } catch (e) {
+      emit('error', { message: 'GSC CSV parse error: ' + e.message }); res.end(); return;
+    }
+    emit('log', { message: `Parsed ${gscRows.length} rows from GSC export.` });
+
+    // 3. Cross-reference
+    emit('log', { message: 'Cross-referencing sitemap against GSC data...' });
+    const { matched, sitemapOnly, gscOnly } = sitemapAnalyzer.crossReference(sitemapEntries, gscRows);
+    emit('log', { message: `Matched: ${matched.length} | Sitemap-only: ${sitemapOnly.length} | GSC-only: ${gscOnly.length}` });
+
+    // 4. Assign tiers and build stats
+    const allPages = [
+      ...matched.map(p => ({ ...p, tier: sitemapAnalyzer.assignTier(p) })),
+      ...sitemapOnly.map(p => ({ ...p, tier: 'sitemap_only', clicks: 0, impressions: 0 })),
+    ];
+
+    const stats = sitemapAnalyzer.buildTierStats(allPages);
+    emit('stats', { stats });
+    emit('log', { message: `Tiers: ${Object.entries(stats.tiers).map(([k,v]) => `${k}=${v}`).join(', ')}` });
+
+    // 5. Get client context if clientId provided
+    let clientContext = null;
+    if (clientId) {
+      try {
+        const client = await store.getClientById(clientId);
+        if (client) clientContext = { name: client.name, city: client.city, state: client.state, practice_type: client.practice_type };
+      } catch (_) {}
+    }
+
+    // 6. Claude analysis
+    emit('log', { message: 'Sending to Claude for strategic analysis...' });
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const userContent = buildSitemapAnalysisMessage(stats, clientContext);
+
+    const ac = new AbortController();
+    req.on('close', () => ac.abort());
+
+    let fullText = '';
+    const stream = anthropic.messages.stream({
+      model: 'claude-opus-4-7',
+      max_tokens: 4096,
+      thinking: { type: 'adaptive' },
+      signal: ac.signal,
+      system: [{ type: 'text', text: SITEMAP_SYSTEM, cache_control: { type: 'ephemeral' } }],
+      messages: userContent,
+    });
+
+    for await (const event of stream) {
+      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+        fullText += event.delta.text;
+      }
+    }
+
+    // 7. Parse Claude response
+    let analysis;
+    try {
+      const cleaned = fullText.trim().replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+      analysis = JSON.parse(cleaned);
+    } catch (_) {
+      emit('log', { message: 'Warning: could not parse Claude response as JSON — proceeding with defaults.' });
+      analysis = { strategy_summary: fullText.slice(0, 500), report_markdown: fullText };
+    }
+
+    emit('analysis', { analysis });
+    emit('log', { message: 'Applying decisions to all pages...' });
+
+    // 8. Apply default decisions
+    const decisionsAll = sitemapAnalyzer.applyDefaultDecisions(allPages);
+    emit('log', { message: `Proposed: keep=${decisionsAll.filter(p=>p.decision==='keep').length}, review=${decisionsAll.filter(p=>p.decision==='review').length}, cut=${decisionsAll.filter(p=>p.decision==='cut').length}` });
+
+    emit('done', { decisions: decisionsAll, gscOnly, analysis });
+
+  } catch (err) {
+    console.error('[sitemap analyze] error:', err);
+    emit('error', { message: err.message });
+  }
+  res.end();
+});
+
+// POST /api/sitemap/export — download proposed sitemap XML, decision CSV, or markdown report
+app.post('/api/sitemap/export', (req, res) => {
+  const { decisions, format, siteUrl } = req.body || {};
+  if (!Array.isArray(decisions)) return res.status(400).json({ error: 'decisions array required' });
+
+  try {
+    if (format === 'xml') {
+      const xml = sitemapAnalyzer.buildProposedSitemapXml(decisions, siteUrl || '');
+      res.setHeader('Content-Type', 'application/xml');
+      res.setHeader('Content-Disposition', 'attachment; filename="proposed-sitemap.xml"');
+      return res.send(xml);
+    }
+    if (format === 'csv') {
+      const csv = sitemapAnalyzer.buildDecisionCsv(decisions);
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename="sitemap-decisions.csv"');
+      return res.send(csv);
+    }
+    if (format === 'report') {
+      const report = (req.body.reportMarkdown || '');
+      res.setHeader('Content-Type', 'text/markdown');
+      res.setHeader('Content-Disposition', 'attachment; filename="sitemap-report.md"');
+      return res.send(report);
+    }
+    res.status(400).json({ error: 'format must be xml, csv, or report' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── Brand Voice cross-tool API (authenticated) ───────────────────────────────
 // Mounted here so /api/brand-voice/:clientId and /api/brand-voice/by-domain/:domain
 // are both available. The router handles auth internally.
