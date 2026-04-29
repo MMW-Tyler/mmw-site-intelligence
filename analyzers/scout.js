@@ -44,22 +44,23 @@ function shouldDefaultCheck(page) {
 function formatPageBlock(page) {
   const lines = [];
 
-  const title = ((page.h1 || page.title || page.url) + '').trim();
-  lines.push(`## ${title}`);
-  lines.push(page.url);
-  lines.push('');
+  const title = ((page.title || page.h1 || page.url) + '').trim();
+  lines.push(title);
+  lines.push(`URL: ${page.url}`);
+  if (page.h1 && page.h1.trim()) {
+    lines.push(`H1: ${page.h1.trim()}`);
+  }
 
   const headings = Array.isArray(page.headings) ? page.headings : [];
   if (headings.length > 0) {
-    const headingStr = headings.map(h => `${h.tag.toUpperCase()}: ${h.text}`).join(' | ');
-    lines.push(`**Subheadings:** ${headingStr}`);
-    lines.push('');
+    lines.push('Page sections:');
+    headings.forEach(h => lines.push(h.text));
   }
 
   const body = (page.extracted_body || '').trim();
   if (body) {
+    lines.push('Content:');
     lines.push(body);
-    lines.push('');
   }
 
   return lines.join('\n');
@@ -71,17 +72,20 @@ function formatBatch(pages, opts) {
   const batchNum   = opts.batchNumber || 1;
   const batchTotal = opts.batchTotal  || 1;
   const start      = opts.startIndex  || 0;
+  const crawlDate  = opts.crawlDate   || new Date().toISOString().split('T')[0];
 
   const header = [
-    `# ${siteName} — Content Blocks (Batch ${batchNum} of ${batchTotal})`,
-    `Pages ${start + 1}–${start + pages.length}`,
-    '',
+    `${siteName} — Content Reference`,
+    `Batch: ${batchNum} of ${batchTotal} | URLs ${start + 1}–${start + pages.length} of ${opts.totalPages || pages.length}`,
+    `Crawled: ${crawlDate}`,
+    `Purpose: Source-of-truth for content generation. Each block = URL, title, H1, headings, compressed body (~700 tokens max per page).`,
+    `> USAGE: Find the matching URL block and use as factual foundation for content generation. Do not contradict existing claims, terminology, or described procedures.`,
     '---',
     '',
   ].join('\n');
 
-  const blocks = pages.map(p => formatPageBlock(p) + '\n---').join('\n\n');
-  return header + blocks + '\n';
+  const blocks = pages.map(p => formatPageBlock(p)).join('\n---\n');
+  return header + blocks + '\n---\n';
 }
 
 function formatManifest(batchMeta, opts) {

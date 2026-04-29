@@ -407,6 +407,7 @@ app.post('/api/scout/:crawlId/generate', async (req, res) => {
     const batches = scout.buildBatches(selected, batchSize);
     const zip     = new JSZip();
 
+    const crawlDate = (crawl.finished_at || new Date().toISOString()).split('T')[0];
     const batchMeta = batches.map((pages, i) => {
       const filename = `batch-${String(i + 1).padStart(3, '0')}.md`;
       zip.file(filename, scout.formatBatch(pages, {
@@ -414,6 +415,8 @@ app.post('/api/scout/:crawlId/generate', async (req, res) => {
         batchNumber: i + 1,
         batchTotal:  batches.length,
         startIndex:  i * batchSize,
+        totalPages:  selected.length,
+        crawlDate,
       }));
       return { filename, count: pages.length, startIndex: i * batchSize };
     });
