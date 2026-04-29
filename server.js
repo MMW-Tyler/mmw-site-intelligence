@@ -32,7 +32,8 @@ const scout         = require('./analyzers/scout');
 const voice         = require('./analyzers/voice');
 const schemaAnalyzer = require('./analyzers/schema');
 const brandVoiceApi = require('./api/brand-voice');
-const wp            = require('./lib/wp');
+const wp              = require('./lib/wp');
+const schemaValidator = require('./lib/schema-validator');
 
 const Anthropic = require('@anthropic-ai/sdk');
 const { SYSTEM_PROMPT: SEO_SYSTEM,       buildSeoUserMessage }    = require('./prompts/seo-optimize');
@@ -1204,11 +1205,28 @@ app.post('/api/optimize/:crawlId/schema/scan-analyze', async (req, res) => {
           }
         }
 
+        // Validate each proposed schema against schema.org vocabulary
+        if (Array.isArray(pageResult.schemas)) {
+          for (const s of pageResult.schemas) {
+            if (s.schema && typeof s.schema === 'object') {
+              s.validation = await schemaValidator.validateSchema(s.schema);
+            } else {
+              s.validation = { valid: false, errors: ['Schema is not a valid JSON object'], warnings: [] };
+            }
+          }
+        }
+
         // Attach post_id for push step
         pageResult.post_id = postIdMap[pageUrl] || null;
         pageResult.url     = pageUrl;
         allProposals.push(pageResult);
       }
+    }
+
+    const invalidCount = allProposals.reduce((n, p) =>
+      n + (p.schemas || []).filter(s => s.validation && !s.validation.valid).length, 0);
+    if (invalidCount > 0) {
+      emit('log', { message: `⚠ ${invalidCount} schema${invalidCount === 1 ? '' : 's'} flagged by schema.org validator — review before pushing.` });
     }
 
     emit('done', { proposals: allProposals });
@@ -1230,6 +1248,23 @@ app.post('/api/optimize/:crawlId/schema/push', async (req, res) => {
     if (!crawl) return res.status(404).json({ error: 'Crawl not found' });
     if (!client || !client.wp_url || !client.wp_username || !client.wp_app_password) {
       return res.status(400).json({ error: 'WordPress credentials not configured' });
+    }
+
+    // Validate all schemas before pushing any
+    const validationResults = await Promise.all(
+      items.map(item => schemaValidator.validateSchema(item.schema || {}))
+    );
+    const invalidItems = items
+      .map((item, i) => ({ item, v: validationResults[i] }))
+      .filter(({ v }) => !v.valid);
+    if (invalidItems.length > 0) {
+      const msgs = invalidItems.map(({ item, v }) =>
+        `${item.schemaType} (${item.url}): ${v.errors.join('; ')}`
+      );
+      return res.status(422).json({
+        error: 'One or more schemas failed schema.org validation — correct errors before pushing.',
+        validation_errors: msgs,
+      });
     }
 
     const results = [];
@@ -1282,4 +1317,6 @@ app.use('/api/brand-voice', brandVoiceApi);
 app.listen(PORT, () => {
   console.log(`MMW Site Intelligence — listening on :${PORT}`);
   console.log(`Supabase URL: ${process.env.SUPABASE_URL ? 'configured' : 'NOT SET'}`);
+  // Upgrade bundled schema.org vocab to full live vocabulary in background.
+  schemaValidator.preload();
 });

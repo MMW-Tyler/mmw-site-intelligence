@@ -697,6 +697,14 @@
   .schema-reason { font-size: 12px; color: var(--text-secondary); font-family: 'Barlow', sans-serif; flex: 1; }
   .schema-json-area { width: 100%; box-sizing: border-box; font-family: var(--mono); font-size: 11px; padding: 8px; border: 1px solid var(--border-strong); border-radius: 6px; resize: vertical; min-height: 120px; line-height: 1.5; }
   .schema-json-area:focus { outline: none; border-color: var(--green); }
+  .schema-valid-badge   { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:600; padding:2px 8px; border-radius:20px; font-family:'Barlow',sans-serif; flex-shrink:0; }
+  .schema-valid-badge.ok   { background:#edfaf3; color:#1a7a4a; }
+  .schema-valid-badge.warn { background:#fffbeb; color:#92600a; }
+  .schema-valid-badge.err  { background:#fdf0f0; color:#c0392b; }
+  .schema-validation-details { font-size:11px; font-family:'Barlow',sans-serif; margin-top:6px; padding:8px 10px; border-radius:6px; line-height:1.6; }
+  .schema-validation-details.err  { background:#fdf0f0; color:#c0392b; border:1px solid #f5c2c2; }
+  .schema-validation-details.warn { background:#fffbeb; color:#92600a; border:1px solid #f5d77e; }
+  .schema-item.has-errors { border-color: #f5c2c2; }
 
 </style>
 </head>
@@ -3799,36 +3807,75 @@
   function renderSchemaProposals() {
     const proposals = optState.schemaProposals;
     const total     = proposals.reduce((acc, p) => acc + (p.schemas || []).length, 0);
-    document.getElementById('schema-results-sub').textContent =
-      `${proposals.length} page${proposals.length === 1 ? '' : 's'} · ${total} schema${total === 1 ? '' : 's'} proposed. Review JSON, then push to WordPress.`;
+    const invalidTotal = proposals.reduce((n, p) =>
+      n + (p.schemas || []).filter(s => s.validation && !s.validation.valid).length, 0);
+    const warnTotal = proposals.reduce((n, p) =>
+      n + (p.schemas || []).filter(s => s.validation && s.validation.valid && s.validation.warnings.length > 0).length, 0);
+    let subText = `${proposals.length} page${proposals.length === 1 ? '' : 's'} · ${total} schema${total === 1 ? '' : 's'} proposed.`;
+    if (invalidTotal > 0) subText += ` ${invalidTotal} with validation errors (push blocked).`;
+    else if (warnTotal > 0) subText += ` ${warnTotal} with warnings.`;
+    else subText += ' All schemas valid.';
+    document.getElementById('schema-results-sub').textContent = subText;
 
     document.getElementById('schema-proposals-list').innerHTML = proposals.map((item, pi) => {
       const urlDisplay  = escapeHTML((item.url || '').replace(/^https?:\/\/[^\/]+/, '') || '/');
       const schemas     = item.schemas || [];
       const noPost      = !item.post_id;
+      const pageInvalid = schemas.some(s => s.validation && !s.validation.valid);
 
       const schemaItems = schemas.map((s, si) => {
-        const json = JSON.stringify(s.schema, null, 2);
-        return `<div class="schema-item">
+        const json    = JSON.stringify(s.schema, null, 2);
+        const v       = s.validation || { valid: true, errors: [], warnings: [] };
+        const hasErr  = v.errors.length > 0;
+        const hasWarn = !hasErr && v.warnings.length > 0;
+
+        let validBadge = '';
+        if (hasErr) {
+          validBadge = `<span class="schema-valid-badge err" title="${escapeHTML(v.errors.join('\n'))}">✗ Invalid</span>`;
+        } else if (hasWarn) {
+          validBadge = `<span class="schema-valid-badge warn" title="${escapeHTML(v.warnings.join('\n'))}">⚠ Warning</span>`;
+        } else {
+          validBadge = `<span class="schema-valid-badge ok">✓ Valid</span>`;
+        }
+
+        let detailsHtml = '';
+        if (hasErr) {
+          detailsHtml = `<div class="schema-validation-details err"><strong>Validation errors — fix before pushing:</strong><br>${v.errors.map(e => escapeHTML(e)).join('<br>')}</div>`;
+        } else if (hasWarn) {
+          detailsHtml = `<div class="schema-validation-details warn"><strong>Warnings (push still allowed):</strong><br>${v.warnings.map(w => escapeHTML(w)).join('<br>')}</div>`;
+        }
+
+        const pushDisabled = noPost || hasErr;
+        const pushTitle    = hasErr ? 'Fix validation errors before pushing'
+                           : noPost ? 'No WP post found' : '';
+
+        return `<div class="schema-item${hasErr ? ' has-errors' : ''}">
           <div class="schema-item-header">
             <span class="schema-type-badge">${escapeHTML(s.schema_type || '')}</span>
+            ${validBadge}
             <span class="schema-reason">${escapeHTML(s.reason || '')}</span>
             <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
               <button class="secondary" style="font-size:11px;padding:5px 10px;"
-                onclick="pushSchemaItem(${pi}, ${si})"${noPost ? ' disabled title="No WP post found"' : ''}>Push</button>
+                onclick="pushSchemaItem(${pi}, ${si})"${pushDisabled ? ` disabled title="${escapeHTML(pushTitle)}"` : ''}>Push</button>
               <div class="push-status" id="schema-push-status-${pi}-${si}"></div>
             </div>
           </div>
+          ${detailsHtml}
           <textarea class="schema-json-area" rows="8"
             id="schema-json-${pi}-${si}">${escapeHTML(json)}</textarea>
         </div>`;
       }).join('');
 
+      const pageErrCount = schemas.filter(s => s.validation && !s.validation.valid).length;
+      const pageSummary  = pageErrCount > 0
+        ? ` · <span style="color:#c0392b;font-weight:600;">${pageErrCount} error${pageErrCount > 1 ? 's' : ''}</span>`
+        : '';
+
       return `<div class="schema-page-card">
         <div class="schema-page-header" onclick="this.nextElementSibling.classList.toggle('open')">
           <span class="schema-page-url">${urlDisplay}</span>
           <span style="font-size:12px;color:var(--text-secondary);font-family:Barlow,sans-serif;">
-            ${schemas.length} schema${schemas.length === 1 ? '' : 's'}${noPost ? ' · no WP post found' : ''}
+            ${schemas.length} schema${schemas.length === 1 ? '' : 's'}${noPost ? ' · no WP post found' : ''}${pageSummary}
           </span>
         </div>
         <div class="schema-page-body open">${schemaItems}</div>
@@ -3842,18 +3889,23 @@
     btn.textContent = 'Pushing…';
 
     const items = [];
+    let skippedInvalid = 0;
     optState.schemaProposals.forEach((item, pi) => {
       if (!item.post_id) return;
       (item.schemas || []).forEach((s, si) => {
+        if (s.validation && !s.validation.valid) { skippedInvalid++; return; }
         const ta = document.getElementById(`schema-json-${pi}-${si}`);
         let schema;
         try { schema = JSON.parse(ta ? ta.value : JSON.stringify(s.schema)); } catch (_) { return; }
         items.push({ url: item.url, postId: item.post_id, schemaType: s.schema_type, schema });
       });
     });
+    if (skippedInvalid > 0) {
+      alert(`${skippedInvalid} schema${skippedInvalid > 1 ? 's' : ''} with validation errors will be skipped. Fix the errors in the JSON editor and re-run analysis, or push valid schemas individually.`);
+    }
 
     if (items.length === 0) {
-      alert('No schemas with a resolved WordPress post ID. Ensure the MMW plugin is installed and URLs match WP posts.');
+      alert('No valid schemas with a resolved WordPress post ID to push.');
       btn.disabled = false; btn.textContent = 'Push all to WordPress'; return;
     }
 
