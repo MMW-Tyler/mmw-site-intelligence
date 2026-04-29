@@ -710,6 +710,31 @@
   .schema-validation-details.warn { background:#fffbeb; color:#92600a; border:1px solid #f5d77e; }
   .schema-item.has-errors { border-color: #f5c2c2; }
 
+  /* ── Sitemap tab ──────────────────────────────────────────────────────────── */
+  .sitemap-upload-zone { border: 2px dashed var(--border-strong); border-radius: 10px; padding: 20px 24px; display: flex; flex-direction: column; gap: 6px; cursor: pointer; transition: border-color 0.15s; }
+  .sitemap-upload-zone:hover, .sitemap-upload-zone.has-file { border-color: var(--green); }
+  .sitemap-upload-zone.has-file { background: #f5fbf7; }
+  .sitemap-file-label { font-size: 12px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-muted); font-family: 'Barlow', sans-serif; }
+  .sitemap-file-name { font-size: 13px; color: var(--dark); font-family: 'Barlow', sans-serif; }
+  .tier-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .tier-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+  .tier-card-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); font-family: 'Barlow', sans-serif; }
+  .tier-card-count { font-size: 28px; font-weight: 700; color: var(--dark); line-height: 1.1; }
+  .tier-card-sub { font-size: 11px; color: var(--text-muted); font-family: 'Barlow', sans-serif; }
+  .tier-card.keep { border-color: var(--green); background: #f5fbf7; }
+  .tier-card.review { border-color: #f5c518; background: #fffdf0; }
+  .tier-card.cut { border-color: #f5c2c2; background: #fdf0f0; }
+  .sitemap-decisions-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .sitemap-decisions-table th { text-align: left; padding: 7px 10px; border-bottom: 2px solid var(--border); font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); white-space: nowrap; }
+  .sitemap-decisions-table td { padding: 6px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; font-family: var(--mono); font-size: 11px; }
+  .sitemap-decisions-table tr:hover td { background: var(--green-lighter); }
+  .decision-badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 20px; font-family: 'Barlow', sans-serif; text-transform: uppercase; letter-spacing: 0.05em; }
+  .decision-badge.keep   { background: #edfaf3; color: #1a7a4a; }
+  .decision-badge.review { background: #fffbeb; color: #92600a; }
+  .decision-badge.cut    { background: #fdf0f0; color: #c0392b; }
+  .tier-badge { display: inline-block; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-family: 'Barlow', sans-serif; background: var(--border); color: var(--dark-mid); font-weight: 600; }
+  .sitemap-strategy-box { background: var(--green-lighter); border: 1px solid var(--green); border-radius: 8px; padding: 14px 18px; font-family: 'Barlow', sans-serif; font-size: 13px; line-height: 1.6; color: var(--dark); }
+
 </style>
 </head>
 <body>
@@ -732,6 +757,7 @@
     <button class="tab" data-tab="scout"  onclick="switchTab('scout', this)">Scout</button>
     <button class="tab" data-tab="voice"    onclick="switchTab('voice', this)">Brand Voice</button>
     <button class="tab" data-tab="optimize" onclick="switchTab('optimize', this)">Optimize</button>
+    <button class="tab" data-tab="sitemap" onclick="switchTab('sitemap', this)">Sitemap</button>
   </div>
 
   <!-- ─── CLIENTS TAB ────────────────────────────────────────────────────── -->
@@ -1516,6 +1542,132 @@
     </div>
   </section>
 
+  <section class="tab-panel" id="panel-sitemap">
+    <div id="sitemap-upload-view">
+      <div class="card">
+        <div class="card-title">Sitemap Optimizer</div>
+        <div class="card-sub">Upload a sitemap XML and a Google Search Console CSV export to generate a data-driven proposed sitemap.</div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px;">
+          <!-- Sitemap XML upload -->
+          <div>
+            <div class="sitemap-file-label" style="margin-bottom:8px;">Sitemap XML</div>
+            <div class="sitemap-upload-zone" id="sm-xml-zone" onclick="document.getElementById('sm-xml-input').click()">
+              <span class="sitemap-file-name" id="sm-xml-name">Click to upload sitemap.xml</span>
+              <span style="font-size:11px;color:var(--text-muted);font-family:'Barlow',sans-serif;">Standard XML sitemap (urlset format)</span>
+            </div>
+            <input type="file" id="sm-xml-input" accept=".xml,text/xml" style="display:none" onchange="handleSitemapFile(this)">
+          </div>
+          <!-- GSC CSV upload -->
+          <div>
+            <div class="sitemap-file-label" style="margin-bottom:8px;">GSC Performance CSV</div>
+            <div class="sitemap-upload-zone" id="sm-csv-zone" onclick="document.getElementById('sm-csv-input').click()">
+              <span class="sitemap-file-name" id="sm-csv-name">Click to upload GSC export</span>
+              <span style="font-size:11px;color:var(--text-muted);font-family:'Barlow',sans-serif;">Pages report — Clicks, Impressions, CTR, Position</span>
+            </div>
+            <input type="file" id="sm-csv-input" accept=".csv,text/csv" style="display:none" onchange="handleGscFile(this)">
+          </div>
+        </div>
+
+        <!-- Optional client tie-in -->
+        <div style="margin-top:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+          <label style="font-size:12px;font-weight:600;font-family:'Barlow',sans-serif;color:var(--dark-mid);">Link to client (optional):</label>
+          <select id="sm-client-select" class="crawl-select" style="width:220px;">
+            <option value="">— No client —</option>
+          </select>
+        </div>
+
+        <div style="margin-top:20px;display:flex;gap:10px;align-items:center;">
+          <button class="primary" id="sm-analyze-btn" onclick="analyzeSitemap()" disabled>Analyze Sitemap</button>
+          <span id="sm-file-status" style="font-size:12px;color:var(--text-muted);font-family:'Barlow',sans-serif;">Upload both files to continue</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Progress log -->
+    <div id="sitemap-progress-view" class="hidden">
+      <div class="card">
+        <div class="card-title">Analyzing…</div>
+        <div class="log-stream" id="sm-log" style="max-height:200px;overflow-y:auto;"></div>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div id="sitemap-results-view" class="hidden">
+      <!-- Strategy summary -->
+      <div class="card" id="sm-strategy-card">
+        <div class="card-title">Strategy Summary</div>
+        <div class="sitemap-strategy-box" id="sm-strategy-text"></div>
+        <div style="margin-top:10px;font-size:12px;font-family:'Barlow',sans-serif;color:var(--text-muted);" id="sm-thresholds-text"></div>
+      </div>
+
+      <!-- Tier breakdown -->
+      <div class="card">
+        <div class="card-title">Tier Breakdown</div>
+        <div class="tier-grid" id="sm-tier-grid"></div>
+        <div id="sm-estimated-impact" style="font-size:13px;font-family:'Barlow',sans-serif;color:var(--dark-mid);margin-top:4px;"></div>
+      </div>
+
+      <!-- Actions -->
+      <div class="card">
+        <div class="card-title">Export</div>
+        <div class="card-sub">Review decisions below, then download your proposed sitemap or full analysis.</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">
+          <button class="primary" onclick="exportSitemap('xml')">Download Proposed Sitemap.xml</button>
+          <button class="secondary" onclick="exportSitemap('csv')">Download Decisions CSV</button>
+          <button class="secondary" onclick="exportSitemap('report')">Download Strategy Report .md</button>
+          <button class="secondary" onclick="resetSitemapTool()">← New Analysis</button>
+        </div>
+      </div>
+
+      <!-- Decisions table -->
+      <div class="card" style="padding-bottom:0;">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
+          <div>
+            <div class="card-title" style="margin-bottom:2px;">Page Decisions</div>
+            <div class="card-sub" id="sm-decisions-sub"></div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <input type="text" id="sm-filter-text" placeholder="Filter by URL…" oninput="renderSitemapTable()" style="padding:7px 10px;font-size:12px;font-family:'Barlow',sans-serif;border:1px solid var(--border-strong);border-radius:8px;width:200px;">
+            <select id="sm-filter-decision" onchange="renderSitemapTable()" class="crawl-select">
+              <option value="">All decisions</option>
+              <option value="keep">Keep</option>
+              <option value="review">Review</option>
+              <option value="cut">Cut</option>
+            </select>
+            <select id="sm-filter-tier" onchange="renderSitemapTable()" class="crawl-select">
+              <option value="">All tiers</option>
+              <option value="hv">High-Value</option>
+              <option value="performing">Performing</option>
+              <option value="low">Low-Traffic</option>
+              <option value="invisible">Invisible</option>
+              <option value="ghost">Ghost</option>
+              <option value="dead">Dead</option>
+              <option value="sitemap_only">Sitemap-Only</option>
+            </select>
+          </div>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="sitemap-decisions-table">
+            <thead>
+              <tr>
+                <th>URL</th>
+                <th>Tier</th>
+                <th>Decision</th>
+                <th class="num">Clicks</th>
+                <th class="num">Impressions</th>
+                <th class="num">Position</th>
+                <th>Override</th>
+              </tr>
+            </thead>
+            <tbody id="sm-decisions-tbody"></tbody>
+          </table>
+        </div>
+        <div id="sm-table-pagination" style="padding:12px 0;text-align:center;font-size:12px;font-family:'Barlow',sans-serif;color:var(--text-muted);"></div>
+      </div>
+    </div>
+  </section>
+
 </main>
 
 <script>
@@ -1557,6 +1709,7 @@
     if (name === 'scout')   initScoutTab();
     if (name === 'voice')   initVoiceTab();
     if (name === 'optimize') initOptimizeTab();
+    if (name === 'sitemap')  initSitemapTab();
 
     // Re-fetch crawl list for already-initialized tabs so the dropdown stays fresh
     if (name === 'audit'    && auditState.initialized)    refreshCrawlSelect('audit');
