@@ -599,6 +599,10 @@
 
   .history-pill { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-family:'Barlow',sans-serif; font-weight:600; padding:3px 9px; border-radius:20px; background:var(--green-lighter); color:var(--green-mid); margin-right:6px; }
 
+  /* ─── Audit layout: allow full-width expansion ───────────────────────────── */
+  #panel-audit { max-width: none; width: 100%; }
+  #panel-audit .audit-table-wrap { max-height: none; overflow-y: visible; }
+
   /* compact WP status in Optimize tab */
   .wp-status-bar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
   .wp-status-bar .opt-connection-status { margin:0; }
@@ -958,6 +962,8 @@
       </div>
       <div class="alert success">Crawl saved. Audit, Scout, and Brand Voice tabs will read from this in upcoming phases.</div>
       <div class="btn-row">
+        <button class="primary" onclick="goToCrawlResult('audit')">Go to Audit →</button>
+        <button class="secondary" onclick="goToCrawlResult('optimize')">Go to Optimize →</button>
         <button class="secondary" onclick="resetCrawl()">Run another crawl</button>
       </div>
     </div>
@@ -1551,6 +1557,25 @@
     if (name === 'scout')   initScoutTab();
     if (name === 'voice')   initVoiceTab();
     if (name === 'optimize') initOptimizeTab();
+
+    // Re-fetch crawl list for already-initialized tabs so the dropdown stays fresh
+    if (name === 'audit'    && auditState.initialized)    refreshCrawlSelect('audit');
+    if (name === 'scout'    && scoutState.initialized)    refreshCrawlSelect('scout');
+    if (name === 'voice'    && voiceState.initialized)    refreshCrawlSelect('voice');
+    if (name === 'optimize' && optState.initialized)      refreshCrawlSelect('optimize');
+  }
+
+  async function refreshCrawlSelect(tab) {
+    try {
+      const res = await apiFetch('/api/crawls?limit=50');
+      if (!res.ok) return;
+      const { crawls } = await res.json();
+      if (!crawls || crawls.length === 0) return;
+      if (tab === 'audit')    populateCrawlSelect(crawls);
+      if (tab === 'scout')    populateScoutSelect(crawls);
+      if (tab === 'voice')    populateVoiceSelect(crawls);
+      if (tab === 'optimize') populateOptSelect(crawls);
+    } catch (_) {}
   }
 
   function goToClientSettings() {
@@ -1577,6 +1602,15 @@
       return;
     }
 
+    // Persist form values
+    try {
+      localStorage.setItem('crawl_form', JSON.stringify({
+        targetUrl:  targetURL,
+        clientName: clientName,
+        maxPages:   maxPages,
+      }));
+    } catch (_) {}
+
     document.getElementById('startBtn').disabled = true;
     document.getElementById('crawl-form').classList.add('hidden');
     document.getElementById('crawl-progress').classList.remove('hidden');
@@ -1594,12 +1628,18 @@
       });
     } catch (e) {
       logLine('Network error: ' + e.message, 'error');
+      resetCrawl();
+      document.getElementById('crawl-progress').classList.add('hidden');
+      document.getElementById('crawl-form').classList.remove('hidden');
       return;
     }
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: 'Unknown error' }));
       logLine('Failed to start crawl: ' + (err.error || res.statusText), 'error');
+      resetCrawl();
+      document.getElementById('crawl-progress').classList.add('hidden');
+      document.getElementById('crawl-form').classList.remove('hidden');
       return;
     }
 
@@ -1694,6 +1734,11 @@
     document.getElementById('crawl-done').classList.add('hidden');
     document.getElementById('startBtn').disabled = false;
     document.getElementById('cancelBtn').disabled = false;
+  }
+
+  function goToCrawlResult(tabName) {
+    const btn = document.querySelector(`[data-tab="${tabName}"]`);
+    if (btn) switchTab(tabName, btn);
   }
 
   function resetStats() {
@@ -2036,6 +2081,14 @@
 
   // Sort header click handlers
   document.addEventListener('DOMContentLoaded', () => {
+    // Restore crawl form values from localStorage
+    try {
+      const saved = JSON.parse(localStorage.getItem('crawl_form') || '{}');
+      if (saved.targetUrl)  document.getElementById('targetURL').value   = saved.targetUrl;
+      if (saved.clientName) document.getElementById('clientName').value  = saved.clientName;
+      if (saved.maxPages)   document.getElementById('maxPages').value    = saved.maxPages;
+    } catch (_) {}
+
     document.querySelectorAll('#audit-table thead th[data-sort]').forEach(th => {
       th.addEventListener('click', () => {
         const k = th.dataset.sort;
@@ -2289,6 +2342,7 @@
     const count = scoutState.selected.size;
     btn.textContent = `Generate (${count} selected)`;
     btn.disabled    = count === 0;
+    btn.title       = count === 0 ? 'Select at least one page to generate' : '';
   }
 
   // ─── Voice tab ─────────────────────────────────────────────────────────
@@ -2525,6 +2579,7 @@
     const count = voiceState.selected.size;
     btn.textContent = `Analyze Voice (${count} selected)`;
     btn.disabled    = count === 0;
+    btn.title       = count === 0 ? 'Select at least one page to generate' : '';
   }
 
   async function generateVoice() {
@@ -2945,31 +3000,18 @@
   async function testClientWp() {
     const id = clientsState.selectedId;
     if (!id) return;
-    const client = clientsState.clients.find(c => c.id === id);
-    if (!client || !client.wp_url) { alert('Save WordPress credentials first.'); return; }
     const btn = document.getElementById('ce-test-btn');
-    const statusEl = document.getElementById('ce-wp-status');
     btn.disabled = true; btn.textContent = 'Testing…';
-    statusEl.textContent = 'Testing…'; statusEl.className = 'opt-connection-status warning'; statusEl.style.display = '';
-    // Use the optimize ping endpoint via a temp crawl lookup — or just hit the clients/:id/ping if we add it.
-    // For now, use the most recent crawl for this client via listFinishedCrawls pattern.
-    // Simplest: find the latest crawl_id for this client from clientsState data.
-    const crawlId = client.latest_crawl && client.latest_crawl.id;
-    if (!crawlId) {
-      statusEl.textContent = 'No crawl found — run a crawl first to test connection.';
-      statusEl.className = 'opt-connection-status warning';
-      btn.disabled = false; btn.textContent = 'Test Connection'; return;
-    }
     try {
-      const res  = await apiFetch(`/api/optimize/${crawlId}/ping`, { method: 'POST' });
+      const res = await apiFetch(`/api/clients/${id}/ping`);
       const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || res.statusText);
-      statusEl.textContent = `Connected · ${data.name || data.site || 'WordPress'} v${data.version || '?'}`;
-      statusEl.className   = 'opt-connection-status';
+      btn.textContent = data.ok ? '✓ Connected' : '✗ Failed';
+      if (!data.ok) alert('WP connection failed: ' + (data.error || 'Unknown error'));
+      setTimeout(() => { btn.textContent = 'Test Connection'; btn.disabled = false; }, 3000);
     } catch (e) {
-      statusEl.textContent = 'Failed: ' + e.message;
-      statusEl.className   = 'opt-connection-status error';
-    } finally { btn.disabled = false; btn.textContent = 'Test Connection'; }
+      btn.textContent = 'Error';
+      setTimeout(() => { btn.textContent = 'Test Connection'; btn.disabled = false; }, 3000);
+    }
   }
 
   // ─── Report generation ────────────────────────────────────────────────────
@@ -2998,6 +3040,7 @@
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
+      let gotDone = false;
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -3008,6 +3051,7 @@
           let data; try { data = JSON.parse(line.slice(6)); } catch (_) { continue; }
           if (data.type === 'log') { addLog(data.message); }
           else if (data.type === 'done') {
+            gotDone = true;
             clientsState.reportMd = data.report || '';
             document.getElementById('ce-report-preview').textContent = clientsState.reportMd;
             document.getElementById('ce-report-generating').classList.add('hidden');
@@ -3016,9 +3060,13 @@
           } else if (data.type === 'error') { throw new Error(data.message); }
         }
       }
+      if (!gotDone) {
+        throw new Error('Stream ended without a result. Please try again.');
+      }
     } catch (e) {
       addLog('Error: ' + e.message);
       document.getElementById('ce-report-generating').classList.remove('hidden');
+      document.getElementById('ce-report-output').classList.add('hidden');
     } finally { btn.disabled = false; btn.textContent = 'Generate Report'; }
   }
 
@@ -3435,6 +3483,7 @@
     const n   = optState.seoSelected.size;
     btn.disabled    = n === 0;
     btn.textContent = `Generate (${n} selected)`;
+    btn.title       = n === 0 ? 'Select at least one page to generate' : '';
   }
 
   function updateSeoHeaderCb() {
@@ -3524,6 +3573,7 @@
     const n   = optState.schemaSelected.size;
     btn.disabled    = n === 0;
     btn.textContent = `Scan & Analyze (${n} selected)`;
+    btn.title       = n === 0 ? 'Select at least one page to generate' : '';
   }
 
   function updateSchemaHeaderCb() {
@@ -3569,6 +3619,7 @@
       const reader  = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer    = '';
+      let gotDone   = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -3585,6 +3636,7 @@
           if (data.type === 'log') {
             addLog(data.message);
           } else if (data.type === 'done') {
+            gotDone = true;
             optState.seoProposals = data.proposals || [];
             renderSeoResults();
             showSeoState('results');
@@ -3594,10 +3646,13 @@
           }
         }
       }
-      if (optState.seoProposals.length > 0) { renderSeoResults(); showSeoState('results'); }
-      else showSeoState('picker');
+      if (!gotDone) {
+        throw new Error('Stream ended without a result. Please try again.');
+      }
     } catch (e) {
       alert('SEO generation failed: ' + e.message);
+      const btn = document.getElementById('seo-generate-btn');
+      if (btn) { btn.disabled = (optState.seoSelected.size === 0); updateSeoGenBtn(); }
       showSeoState('picker');
     }
   }
@@ -3786,6 +3841,7 @@
       const reader  = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer    = '';
+      let gotDone   = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -3802,6 +3858,7 @@
           if (data.type === 'log') {
             addLog(data.message);
           } else if (data.type === 'done') {
+            gotDone = true;
             optState.schemaProposals = data.proposals || [];
             renderSchemaProposals();
             showSchemaState('results');
@@ -3811,10 +3868,13 @@
           }
         }
       }
-      if (optState.schemaProposals.length > 0) { renderSchemaProposals(); showSchemaState('results'); }
-      else showSchemaState('picker');
+      if (!gotDone) {
+        throw new Error('Stream ended without a result. Please try again.');
+      }
     } catch (e) {
       alert('Schema scan failed: ' + e.message);
+      const btn = document.getElementById('schema-scan-btn');
+      if (btn) { updateSchemaGenBtn(); }
       showSchemaState('picker');
     }
   }
@@ -3918,7 +3978,7 @@
         const ta = document.getElementById(`schema-json-${pi}-${si}`);
         let schema;
         try { schema = JSON.parse(ta ? ta.value : JSON.stringify(s.schema)); } catch (_) { return; }
-        items.push({ url: item.url, postId: item.post_id, schemaType: s.schema_type, schema });
+        items.push({ url: item.url, postId: item.post_id, schemaType: s.schema_type, schema, pi, si });
       });
     });
     if (skippedInvalid > 0) {
@@ -3939,9 +3999,11 @@
       if (!res.ok) throw new Error(data.error || res.statusText);
 
       (data.results || []).forEach(r => {
-        const pi = optState.schemaProposals.findIndex(p => p.url === r.url);
+        // prefer echoed indices; fall back to findIndex for backward compat
+        const pi = r.pi != null ? r.pi : optState.schemaProposals.findIndex(p => p.url === r.url);
         if (pi < 0) return;
-        const si = (optState.schemaProposals[pi].schemas || []).findIndex(s => s.schema_type === r.schemaType);
+        const item = optState.schemaProposals[pi];
+        const si = r.si != null ? r.si : (item && item.schemas ? item.schemas.findIndex(s => s.schema_type === r.schemaType) : -1);
         if (si < 0) return;
         const el = document.getElementById(`schema-push-status-${pi}-${si}`);
         if (!el) return;
