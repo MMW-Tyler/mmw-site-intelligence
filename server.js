@@ -45,6 +45,17 @@ const PORT = parseInt(process.env.PORT, 10) || 3000;
 
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
+
+// Internal API auth — set MMW_INTERNAL_TOKEN in env to enable
+const apiAuth = (req, res, next) => {
+  const secret = process.env.MMW_INTERNAL_TOKEN;
+  if (!secret) return next(); // disabled when env var not set
+  const auth = req.headers['authorization'] || '';
+  if (auth === `Bearer ${secret}`) return next();
+  res.status(401).json({ error: 'Unauthorized' });
+};
+app.use('/api', apiAuth);
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── Health check ────────────────────────────────────────────────────────────
@@ -225,6 +236,21 @@ app.delete('/api/clients/:clientId', async (req, res) => {
   }
 });
 
+// GET /api/clients/:clientId/ping — test WP credentials without needing a crawl
+app.get('/api/clients/:clientId/ping', async (req, res) => {
+  try {
+    const client = await store.getClientById(req.params.clientId);
+    if (!client) return res.status(404).json({ error: 'Client not found' });
+    if (!client.wp_url || !client.wp_username || !client.wp_app_password) {
+      return res.json({ ok: false, error: 'WordPress credentials not configured' });
+    }
+    const result = await wp.ping(client.wp_url, client.wp_username, client.wp_app_password);
+    res.json(result);
+  } catch (err) {
+    res.json({ ok: false, error: err.message });
+  }
+});
+
 // GET /api/clients/:clientId/history — optimization history for a client
 app.get('/api/clients/:clientId/history', async (req, res) => {
   try {
@@ -284,6 +310,9 @@ app.post('/api/clients/:clientId/report', async (req, res) => {
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     let fullText = '';
 
+    const ac = new AbortController();
+    req.on('close', () => ac.abort());
+
     const stream = anthropic.messages.stream({
       model:      'claude-opus-4-7',
       max_tokens: 4096,
@@ -293,7 +322,7 @@ app.post('/api/clients/:clientId/report', async (req, res) => {
         role:    'user',
         content: buildReportUserMessage(client, crawlSummary, auditSummary, seoHistory, schemaHistory),
       }],
-    });
+    }, { signal: ac.signal });
 
     for await (const event of stream) {
       if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
@@ -388,6 +417,7 @@ app.post('/api/scout/:crawlId/generate', async (req, res) => {
     if (!Array.isArray(urls) || urls.length === 0) {
       return res.status(400).json({ error: 'urls array is required and must be non-empty' });
     }
+    if (urls.length > 500) return res.status(400).json({ error: 'Maximum 500 URLs per request' });
     const batchSize = Math.max(1, Math.min(500, parseInt(batchSizeInput, 10) || 100));
 
     const crawl = await resolveCrawl(req.params.crawlId);
@@ -475,6 +505,7 @@ app.post('/api/voice/:crawlId/generate', async (req, res) => {
   if (!Array.isArray(urls) || urls.length === 0) {
     return res.status(400).json({ error: 'urls array is required and must be non-empty' });
   }
+  if (urls.length > 500) return res.status(400).json({ error: 'Maximum 500 URLs per request' });
 
   let crawl;
   try {
@@ -492,6 +523,9 @@ app.post('/api/voice/:crawlId/generate', async (req, res) => {
     'Connection':    'keep-alive',
   });
 
+  const ac = new AbortController();
+  req.on('close', () => ac.abort());
+
   const emit = (type, data) => {
     try { res.write(`data: ${JSON.stringify({ type, ...data })}\n\n`); } catch (_) {}
   };
@@ -505,7 +539,7 @@ app.post('/api/voice/:crawlId/generate', async (req, res) => {
       return res.end();
     }
 
-    const profile = await voice.analyzeVoice(pages, emit);
+    const profile = await voice.analyzeVoice(pages, emit, { signal: ac.signal });
 
     emit('log', { message: 'Saving profile...' });
     await store.upsertBrandVoice(crawl.client_id, crawl.id, urls, profile);
@@ -710,6 +744,7 @@ app.post('/api/optimize/:crawlId/seo/generate', async (req, res) => {
   if (!Array.isArray(urls) || urls.length === 0) {
     return res.status(400).json({ error: 'urls array is required' });
   }
+  if (urls.length > 500) return res.status(400).json({ error: 'Maximum 500 URLs per request' });
 
   let crawl, client;
   try {
@@ -739,6 +774,9 @@ app.post('/api/optimize/:crawlId/seo/generate', async (req, res) => {
     const BATCH_SIZE = 10;
     const proposals  = [];
 
+    const ac = new AbortController();
+    req.on('close', () => ac.abort());
+
     for (let i = 0; i < selected.length; i += BATCH_SIZE) {
       const batch = selected.slice(i, i + BATCH_SIZE);
       emit('log', { message: `Optimizing pages ${i + 1}–${Math.min(i + BATCH_SIZE, selected.length)} of ${selected.length}...` });
@@ -752,7 +790,7 @@ app.post('/api/optimize/:crawlId/seo/generate', async (req, res) => {
         thinking:   { type: 'adaptive' },
         system: [{ type: 'text', text: SEO_SYSTEM, cache_control: { type: 'ephemeral' } }],
         messages: [{ role: 'user', content: userContent }],
-      });
+      }, { signal: ac.signal });
 
       for await (const event of stream) {
         if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
@@ -783,6 +821,7 @@ app.post('/api/optimize/:crawlId/seo/push', async (req, res) => {
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'items array is required' });
   }
+  if (items.length > 200) return res.status(400).json({ error: 'Maximum 200 items per request' });
   try {
     const { crawl, client } = await resolveCrawlAndClient(req.params.crawlId);
     if (!crawl) return res.status(404).json({ error: 'Crawl not found' });
@@ -1097,6 +1136,7 @@ app.post('/api/optimize/:crawlId/schema/scan-analyze', async (req, res) => {
   if (!Array.isArray(urls) || urls.length === 0) {
     return res.status(400).json({ error: 'urls array is required' });
   }
+  if (urls.length > 500) return res.status(400).json({ error: 'Maximum 500 URLs per request' });
 
   let crawl, client;
   try {
@@ -1158,6 +1198,9 @@ app.post('/api/optimize/:crawlId/schema/scan-analyze', async (req, res) => {
     const BATCH_SIZE   = 5;
     const allProposals = [];
 
+    const ac = new AbortController();
+    req.on('close', () => ac.abort());
+
     for (let i = 0; i < selected.length; i += BATCH_SIZE) {
       const batch = selected.slice(i, i + BATCH_SIZE);
       emit('log', { message: `Analyzing schemas for pages ${i + 1}–${Math.min(i + BATCH_SIZE, selected.length)} of ${selected.length}...` });
@@ -1176,7 +1219,7 @@ app.post('/api/optimize/:crawlId/schema/scan-analyze', async (req, res) => {
         thinking:   { type: 'adaptive' },
         system: [{ type: 'text', text: SCHEMA_SYSTEM, cache_control: { type: 'ephemeral' } }],
         messages: [{ role: 'user', content: userContent }],
-      });
+      }, { signal: ac.signal });
 
       for await (const event of stream) {
         if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
@@ -1243,6 +1286,7 @@ app.post('/api/optimize/:crawlId/schema/push', async (req, res) => {
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'items array is required' });
   }
+  if (items.length > 200) return res.status(400).json({ error: 'Maximum 200 items per request' });
   try {
     const { crawl, client } = await resolveCrawlAndClient(req.params.crawlId);
     if (!crawl) return res.status(404).json({ error: 'Crawl not found' });
@@ -1274,9 +1318,17 @@ app.post('/api/optimize/:crawlId/schema/push', async (req, res) => {
           client.wp_url, client.wp_username, client.wp_app_password,
           { postId: item.postId, schemaType: item.schemaType, schema: item.schema }
         );
-        results.push({ url: item.url, schemaType: item.schemaType, ok: true, meta_key: r.meta_key });
+        results.push({
+          url: item.url, schemaType: item.schemaType, ok: true, meta_key: r.meta_key,
+          ...(item.pi != null && { pi: item.pi }),
+          ...(item.si != null && { si: item.si }),
+        });
       } catch (err) {
-        results.push({ url: item.url, schemaType: item.schemaType, ok: false, error: err.message });
+        results.push({
+          url: item.url, schemaType: item.schemaType, ok: false, error: err.message,
+          ...(item.pi != null && { pi: item.pi }),
+          ...(item.si != null && { si: item.si }),
+        });
       }
     }
     res.json({ results });
@@ -1313,6 +1365,14 @@ app.post('/api/optimize/:crawlId/schema/push', async (req, res) => {
 app.use('/api/brand-voice', brandVoiceApi);
 
 // ─── Start ───────────────────────────────────────────────────────────────────
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err);
+  process.exit(1);
+});
 
 app.listen(PORT, () => {
   console.log(`MMW Site Intelligence — listening on :${PORT}`);

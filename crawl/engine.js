@@ -251,7 +251,12 @@ async function crawl(opts, emit, persistPage) {
         }
         let body = '';
         res.setEncoding('utf8');
-        res.on('data', c => { body += c; });
+        res.on('data', c => {
+          body += c;
+          if (body.length > 5 * 1024 * 1024) {
+            res.destroy();
+          }
+        });
         res.on('end', () => resolve({ url: pageURL, statusCode: status, body }));
         res.on('error', e => resolve({ url: pageURL, statusCode: 0, error: e.message }));
       });
@@ -476,7 +481,6 @@ async function crawl(opts, emit, persistPage) {
       activeCount++;
 
       processPage(norm).then(() => {
-        activeCount--;
         const latest = pageBuffer[pageBuffer.length - 1];
         emit('page', {
           n: crawledCount,
@@ -486,6 +490,10 @@ async function crawl(opts, emit, persistPage) {
           title: latest ? latest.title : '',
         });
         emit('progress', { crawled: crawledCount, queued: queue.length, total: maxPages });
+      }).catch(err => {
+        console.error('[crawl] processPage error:', err);
+      }).finally(() => {
+        activeCount--;
       });
 
       if (delayMs > 0) await sleep(delayMs);

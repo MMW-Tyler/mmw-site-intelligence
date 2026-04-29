@@ -49,10 +49,12 @@ const MAX_CHARS_PER_PAGE = 3000; // truncate each page's extracted_text
  *
  * @param {Array}    pages    — crawl_pages rows (must have extracted_text)
  * @param {Function} onEvent  — callback(type, data) for progress events ('log')
+ * @param {Object}   [opts]   — optional: { signal } AbortSignal to cancel the stream
  * @returns {Promise<Object>} — the profile object matching the schema in voice-analysis.js
  */
-async function analyzeVoice(pages, onEvent) {
+async function analyzeVoice(pages, onEvent, opts) {
   const emit = onEvent || (() => {});
+  const signal = (opts && opts.signal) || undefined;
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY environment variable is not set');
@@ -91,7 +93,7 @@ async function analyzeVoice(pages, onEvent) {
     messages: [
       { role: 'user', content: userContent },
     ],
-  });
+  }, ...(signal ? [{ signal }] : []));
 
   let thinkingStarted = false;
   let writingStarted  = false;

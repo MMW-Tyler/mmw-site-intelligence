@@ -186,9 +186,14 @@ async function finalizeCrawl(crawlId, summary) {
     // Batch update in chunks of 50
     for (let i = 0; i < updates.length; i += 50) {
       const chunk = updates.slice(i, i + 50);
-      await Promise.all(chunk.map(u =>
+      const results = await Promise.allSettled(chunk.map(u =>
         sb.from('crawl_pages').update({ inlinks: u.inlinks }).eq('id', u.id)
       ));
+      for (const r of results) {
+        if (r.status === 'rejected') {
+          console.error('[finalizeCrawl] inlink update failed:', r.reason);
+        }
+      }
     }
   }
 
