@@ -1527,6 +1527,20 @@ setInterval(() => {
 
 const RSS_AUTOFIND_PATHS = ['/feed', '/1/feed', '/blog?format=rss', '/rss', '/blog/feed', '/articles/feed'];
 
+// Deliberate exception to the "no fetching from migrate analyzer" rule:
+// the crawl's extracted_body is a text-compressed prose digest, unsuitable
+// for migration which needs faithful post HTML. So sample-test and push
+// fetch the live source page and run extraction against it.
+async function fetchSourcePage(url) {
+  const res = await fetch(url, {
+    headers: { 'User-Agent': 'MMW-Site-Intelligence/1.0 (blog-migration)' },
+    redirect: 'follow',
+    signal:   AbortSignal.timeout(45_000),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`);
+  return await res.text();
+}
+
 async function tryFetchRss(siteUrl) {
   if (!siteUrl) return { url: null, xml: null };
   const origin = (() => { try { return new URL(siteUrl).origin; } catch (_) { return ''; } })();
@@ -1628,7 +1642,8 @@ app.get('/api/migrate/:crawlId/discover', async (req, res) => {
 });
 
 // POST /api/migrate/:crawlId/sample-test
-//   body: { urls: [...] }   — server picks 3 representative, runs full extraction + normalize
+//   body: { urls: [...] }   — server picks 3 representative, fetches each live,
+//   extracts post body, and runs normalization. No WordPress calls.
 app.post('/api/migrate/:crawlId/sample-test', async (req, res) => {
   const { urls } = req.body || {};
   if (!Array.isArray(urls) || urls.length === 0) {
@@ -1645,38 +1660,59 @@ app.post('/api/migrate/:crawlId/sample-test', async (req, res) => {
       return res.status(400).json({ error: 'No matching pages found for the provided URLs' });
     }
 
-    // Run discovery against the selected subset so we have RSS-enriched metadata
     const candidates = migrate.detectBlogPosts(selected, { minWordCount: 1 });
+    const samplePicks = migrate.pickRepresentativeSamples(candidates);
 
-    // Pick 3 representative
-    const samples = migrate.pickRepresentativeSamples(candidates);
+    // RSS enrichment so metadata is populated
+    const rssFound = await tryFetchRss(crawl.target_url).catch(() => ({ xml: null }));
+    const rssItems = rssFound.xml ? migrate.parseRssFeed(rssFound.xml) : [];
+    const enriched = migrate.mergeRssWithPages(rssItems, samplePicks);
 
-    // Detect platform from the first sample's HTML
-    const platform = migrate.detectPlatform(crawl.target_url, (selected[0] && selected[0].extracted_body) || '');
+    // Detect platform from the first fetched page (more reliable than crawl body)
+    let platform = 'unknown';
+    const out = [];
+    const errors = [];
 
-    const out = samples.map(c => {
-      const rawBody     = c._extracted_body || '';
-      const normalized  = migrate.normalizePostBody(rawBody, { platform });
-      const images      = migrate.extractInlineImages(rawBody);
-      return {
-        url:             c.url,
-        platform,
-        metadata: {
-          title:    c.title,
-          slug:     c.slug,
-          pub_date: c.pub_date,
-          author:   c.author,
-          category: c.category,
-        },
-        raw_html:        rawBody,
-        normalized_html: normalized,
-        images,
-      };
-    });
+    for (const c of enriched) {
+      try {
+        const fullHtml = await fetchSourcePage(c.url);
+        if (platform === 'unknown') {
+          platform = migrate.detectPlatform(crawl.target_url, fullHtml);
+        }
+        const postHtml   = migrate.extractPostBody(fullHtml, platform);
+        const htmlMeta   = migrate.extractMetadataFromHtml(fullHtml);
+        const normalized = migrate.normalizePostBody(postHtml, { platform });
+        const images     = migrate.extractInlineImages(postHtml).map(img => ({
+          ...img,
+          original_url: migrate.absoluteUrl(img.original_url, c.url),
+        }));
 
-    // Flag the gate
+        out.push({
+          url:             c.url,
+          platform,
+          metadata: {
+            title:    c.title || htmlMeta.title || htmlMeta.h1,
+            slug:     c.slug || migrate.buildSlug(htmlMeta.title || htmlMeta.h1 || '', c.url),
+            pub_date: c.pub_date || htmlMeta.pub_date,
+            author:   c.author   || htmlMeta.author,
+            category: c.category,
+          },
+          raw_html:        postHtml,
+          normalized_html: normalized,
+          images,
+        });
+      } catch (e) {
+        errors.push({ url: c.url, error: e.message });
+      }
+    }
+
+    if (out.length === 0) {
+      migrateSession(crawl.id).sampleOk = false;
+      return res.status(502).json({ error: 'Failed to fetch any sample pages', errors });
+    }
+
     migrateSession(crawl.id).sampleOk = true;
-    res.json({ samples: out, platform });
+    res.json({ samples: out, platform, errors });
   } catch (err) {
     console.error('[migrate sample-test] error:', err);
     res.status(500).json({ error: err.message });
@@ -1827,8 +1863,9 @@ app.post('/api/migrate/:crawlId/push', async (req, res) => {
     const rssItems = rssFound.xml ? migrate.parseRssFeed(rssFound.xml) : [];
     const enriched = migrate.mergeRssWithPages(rssItems, candidates);
 
-    const platform = migrate.detectPlatform(crawl.target_url, (selected[0] && selected[0].extracted_body) || '');
-    emit('log', { message: `Detected platform: ${platform}. ${rssItems.length} RSS items merged.` });
+    // Platform detection happens off the first fetched page below
+    let platform = migrate.detectPlatform(crawl.target_url, '');
+    emit('log', { message: `${rssItems.length} RSS items merged. Fetching source HTML per post (this can take a while).` });
 
     const termCache  = wpMigrate.makeTermCache();
     const gate       = wpMigrate.rateLimiter(700);
@@ -1845,21 +1882,39 @@ app.post('/api/migrate/:crawlId/push', async (req, res) => {
       emit('post_started', { url: post.url, title: post.title });
 
       try {
+        // Fetch the live source page
+        let fullHtml;
+        try {
+          fullHtml = await fetchSourcePage(post.url);
+        } catch (fe) {
+          failed++;
+          emit('post_failed', { url: post.url, error: `Source fetch failed: ${fe.message}` });
+          continue;
+        }
+        if (platform === 'unknown') platform = migrate.detectPlatform(crawl.target_url, fullHtml);
+
+        const htmlMeta = migrate.extractMetadataFromHtml(fullHtml);
+        const rawBody  = migrate.extractPostBody(fullHtml, platform);
+
+        // Merge metadata: RSS wins, then HTML, then crawl
+        const finalTitle  = post.title    || htmlMeta.title || htmlMeta.h1 || '(untitled)';
+        const finalDate   = post.pub_date || htmlMeta.pub_date;
+        const finalAuthor = post.author   || htmlMeta.author;
+        const finalSlug   = post.slug     || migrate.buildSlug(finalTitle, post.url);
+
         // Check for slug collision in destination
         await gate();
-        const existing = await wpMigrate.findPostBySlug(client.wp_url, auth, post.slug).catch(() => null);
+        const existing = await wpMigrate.findPostBySlug(client.wp_url, auth, finalSlug).catch(() => null);
         if (existing) {
           skipped++;
           emit('post_failed', {
             url:    post.url,
-            error:  `Post with slug "${post.slug}" already exists in destination (id ${existing.id}). Skipping to avoid duplicate.`,
+            error:  `Post with slug "${finalSlug}" already exists in destination (id ${existing.id}). Skipping to avoid duplicate.`,
             skipped: true,
           });
           continue;
         }
 
-        // Build raw body and image set
-        const rawBody = post._extracted_body || '';
         const inlineImages = migrate.extractInlineImages(rawBody);
         const urlMap = {};
         let featuredMediaId = null;
@@ -1922,17 +1977,17 @@ app.post('/api/migrate/:crawlId/push', async (req, res) => {
 
         // Date
         let isoDate = null;
-        if (post.pub_date) {
-          const d = new Date(post.pub_date);
+        if (finalDate) {
+          const d = new Date(finalDate);
           if (!isNaN(d.getTime())) isoDate = d.toISOString();
         }
 
         await gate();
         const result = await wpMigrate.createPost(client.wp_url, auth, {
-          title:          post.title || '(untitled)',
+          title:          finalTitle,
           content:        finalHtml,
           status:         post_status,
-          slug:           post.slug,
+          slug:           finalSlug,
           date:           isoDate,
           featured_media: featuredMediaId,
           categories:     categoryIds,

@@ -23,6 +23,8 @@
  *   detectPlatform(siteUrl, html?)          → platform identifier
  *   pickRepresentativeSamples(pages)        → up to 3 representative pages
  *   wordCount(text)                         → integer
+ *   extractPostBody(fullHtml, platform)     → inner HTML of the post body
+ *   extractMetadataFromHtml(fullHtml)       → { title, h1, pub_date, author }
  */
 
 const cheerio        = require('cheerio');
@@ -137,7 +139,10 @@ function detectBlogPosts(pages, options) {
     if (hasH1)      score += 1;
     if (wc >= minWordCount) score += 1;
 
-    const isCandidate = matchesUrl ? (hasBody && wc >= 50)
+    // URL-pattern matches are trusted even when the crawler's extracted_body
+    // is sparse (common with Weebly/Wix sites the extractor doesn't know).
+    // The actual post HTML is fetched live during sample-test and push.
+    const isCandidate = matchesUrl ? (wc >= 50)
                                     : (hasBody && hasH1 && wc >= minWordCount);
     if (!isCandidate) continue;
 
@@ -468,21 +473,145 @@ function buildSlug(title, fallbackUrl) {
   return s || 'post';
 }
 
+// ─── Extract post body from full HTML ────────────────────────────────────────
+// Given a freshly-fetched source page, isolate the post body so it can be
+// normalized and pushed. Pure function — caller is responsible for the fetch.
+
+const PLATFORM_BODY_SELECTORS = {
+  weebly: [
+    '#wsite-content',
+    '.wsite-section-elements',
+    '.wsite-section-content',
+    'div.blog-content',
+    'div.blog-post',
+  ],
+  wordpress: [
+    '.entry-content',
+    'article.post .post-content',
+    'article .entry-content',
+    'main article',
+  ],
+  squarespace: [
+    '.blog-item-content',
+    '.sqs-html-content',
+    'article .body',
+    'article',
+  ],
+  wix: [
+    '[data-hook="post-description"]',
+    '.post-content',
+    'article',
+  ],
+  godaddy: [
+    '.entry-content',
+    '.post-content',
+    'article',
+  ],
+};
+
+const GENERIC_BODY_SELECTORS = [
+  'article .entry-content',
+  'article .post-content',
+  '.entry-content',
+  '.post-content',
+  '.page-content',
+  'main article',
+  'article',
+  'main',
+  '#content',
+];
+
+const BODY_STRIP_SELECTORS = [
+  'nav', 'header', 'footer', '.nav', '.header', '.footer',
+  '.menu', '.site-branding', '.site-footer', '.site-header',
+  '.sidebar', '.widget', '.widget-area',
+  '.related-posts', '.related', '.also-read',
+  '.share', '.social', '.share-buttons', '.sharedaddy',
+  '.author-bio', '.post-author', '.author-box',
+  '.cookie', '.popup', '.modal',
+  '.breadcrumb', '.comments', '#comments', '.comment-respond',
+  '.wsite-com-displaying', '.wsite-com-listing', '.wsite-comments',
+  '.wsite-header', '.wsite-footer', '.wsite-nav',
+  '.wsite-search-content', '.wsite-blog-aside', '.blog-sidebar',
+  '#wsite-header', '#wsite-footer', '#wsite-nav',
+  'script', 'style', 'noscript', 'iframe', 'form',
+];
+
+function extractPostBody(fullHtml, platform) {
+  if (!fullHtml) return '';
+  const $ = cheerio.load(fullHtml);
+
+  // Strip universal noise first
+  BODY_STRIP_SELECTORS.forEach(sel => { try { $(sel).remove(); } catch (_) {} });
+
+  const platformSelectors = PLATFORM_BODY_SELECTORS[platform] || [];
+  const all = platformSelectors.concat(GENERIC_BODY_SELECTORS);
+
+  for (const sel of all) {
+    const $el = $(sel).first();
+    if ($el.length && $el.text().trim().length > 200) {
+      return $el.html() || '';
+    }
+  }
+  // Last resort: take body
+  const $body = $('body').first();
+  return $body.length ? ($body.html() || '') : fullHtml;
+}
+
+// ─── Extract metadata from full HTML ─────────────────────────────────────────
+// Used as fallback when RSS doesn't provide title/date/author/h1.
+
+function extractMetadataFromHtml(fullHtml) {
+  if (!fullHtml) return { title: '', h1: '', pub_date: null, author: null };
+  const $ = cheerio.load(fullHtml);
+
+  const title = ($('meta[property="og:title"]').attr('content') ||
+                 $('title').text() || '').trim();
+
+  // Prefer the H1 inside the main content area (not site-wide H1)
+  let h1 = '';
+  for (const sel of ['article h1', '.entry-content h1', '.post-content h1', '.wsite-section-elements h1', 'main h1', 'h1']) {
+    const t = $(sel).first().text().trim();
+    if (t) { h1 = t; break; }
+  }
+
+  // Date: og:published_time, article:published_time, <time> tag, common meta
+  let pubDate = null;
+  const dateCandidates = [
+    $('meta[property="article:published_time"]').attr('content'),
+    $('meta[name="article:published_time"]').attr('content'),
+    $('meta[property="og:published_time"]').attr('content'),
+    $('time[datetime]').first().attr('datetime'),
+    $('meta[name="pubdate"]').attr('content'),
+    $('meta[name="date"]').attr('content'),
+  ].filter(Boolean);
+  if (dateCandidates.length > 0) pubDate = dateCandidates[0];
+
+  // Author: meta or .author / .byline element
+  let author = $('meta[name="author"]').attr('content') ||
+               $('meta[property="article:author"]').attr('content') ||
+               $('.author-name, .byline, .post-author, [rel="author"]').first().text().trim() ||
+               null;
+  if (author) author = author.replace(/^by\s+/i, '').trim();
+
+  return {
+    title: title || h1,
+    h1,
+    pub_date: pubDate || null,
+    author:   author || null,
+  };
+}
+
 // ─── Representative sample picker ─────────────────────────────────────────────
 
 function pickRepresentativeSamples(candidates) {
   if (!Array.isArray(candidates) || candidates.length === 0) return [];
   const sorted = candidates.slice();
 
-  const byImageCount = sorted.slice().sort((a, b) => (b.image_count || 0) - (a.image_count || 0));
-  const byWordCount  = sorted.slice().sort((a, b) => (b.word_count  || 0) - (a.word_count  || 0));
-  const byComplexity = sorted.slice().sort((a, b) => {
-    const aBody = a._extracted_body || '';
-    const bBody = b._extracted_body || '';
-    const aComplex = (aBody.match(/<(h2|h3|ul|ol|blockquote|table|figure)/gi) || []).length;
-    const bComplex = (bBody.match(/<(h2|h3|ul|ol|blockquote|table|figure)/gi) || []).length;
-    return bComplex - aComplex;
-  });
+  // Sort by word_count desc; pick longest, median, and one with images (or shortest)
+  const byWords = sorted.slice().sort((a, b) => (b.word_count || 0) - (a.word_count || 0));
+  const withImg = sorted.slice().filter(c => (c.image_count || 0) > 0)
+                                 .sort((a, b) => (b.image_count || 0) - (a.image_count || 0));
 
   const picks = [];
   const seen  = new Set();
@@ -492,12 +621,13 @@ function pickRepresentativeSamples(candidates) {
     picks.push(p);
   }
 
-  if (byImageCount[0] && (byImageCount[0].image_count || 0) > 0) add(byImageCount[0]);
-  add(byWordCount[0]);
-  add(byComplexity[0]);
+  if (withImg[0]) add(withImg[0]);
+  add(byWords[0]);
+  const midIdx = Math.floor(byWords.length / 2);
+  add(byWords[midIdx]);
 
-  // Fill up to 3 from the head of candidates if we still don't have enough
-  for (const p of sorted) {
+  // Fill up to 3 from the head if needed
+  for (const p of byWords) {
     if (picks.length >= 3) break;
     add(p);
   }
@@ -521,6 +651,8 @@ module.exports = {
   wordCount,
   normalizeUrl,
   absoluteUrl,
+  extractPostBody,
+  extractMetadataFromHtml,
   DEFAULT_URL_PATTERNS,
   EXCLUDE_URL_PATTERNS,
 };

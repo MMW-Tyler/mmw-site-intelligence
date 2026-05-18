@@ -1771,7 +1771,7 @@
           <div class="mig-step-num">1</div>
           <div>
             <div class="card-title" style="margin-bottom:2px;">Discover blog posts</div>
-            <div class="card-sub">Identify candidate posts from the source crawl. Optionally merge an RSS feed for date / author / category metadata.</div>
+            <div class="card-sub">Identifies candidate posts from the URL list in the crawl. Optionally merges an RSS feed for date / author / category metadata. Post HTML is fetched live in steps 2 and 4.</div>
           </div>
         </div>
 
@@ -1828,7 +1828,7 @@
           <div class="mig-step-num">2</div>
           <div>
             <div class="card-title" style="margin-bottom:2px;">Sample extraction</div>
-            <div class="card-sub">Test the extraction pipeline against 3 representative posts. Visually confirm each before continuing. This step does not touch WordPress.</div>
+            <div class="card-sub">Fetches 3 representative posts live from the source site, runs the extraction + cleanup pipeline against them, and renders a preview. Takes ~10s for 3 posts. Visually confirm each before continuing. No WordPress calls.</div>
           </div>
         </div>
 

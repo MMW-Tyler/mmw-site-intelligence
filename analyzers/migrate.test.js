@@ -170,19 +170,70 @@ ok('detectPlatform → unknown',              m.detectPlatform('https://x.com', 
 // ─── pickRepresentativeSamples ───────────────────────────────────────────────
 
 const sampleCandidates = [
-  { url: 'a', image_count: 0, word_count: 1000, _extracted_body: '<p>x</p>' },
-  { url: 'b', image_count: 5, word_count: 200,  _extracted_body: '<p>x</p>' },
-  { url: 'c', image_count: 1, word_count: 500,  _extracted_body: '<h2>x</h2><ul><li>x</li></ul><blockquote>x</blockquote>' },
-  { url: 'd', image_count: 0, word_count: 100,  _extracted_body: '<p>x</p>' },
+  { url: 'a', image_count: 0, word_count: 1000 },
+  { url: 'b', image_count: 5, word_count: 200  },
+  { url: 'c', image_count: 1, word_count: 500  },
+  { url: 'd', image_count: 0, word_count: 100  },
 ];
 const samples = m.pickRepresentativeSamples(sampleCandidates);
 ok('pickRepresentativeSamples returns 3', samples.length === 3);
-ok('pickRepresentativeSamples picks the most images',
-   samples.some(s => s.url === 'b'));
-ok('pickRepresentativeSamples picks longest',
-   samples.some(s => s.url === 'a'));
-ok('pickRepresentativeSamples picks most complex',
-   samples.some(s => s.url === 'c'));
+ok('pickRepresentativeSamples picks one with images', samples.some(s => s.url === 'b'));
+ok('pickRepresentativeSamples picks longest',          samples.some(s => s.url === 'a'));
+
+// ─── extractPostBody / extractMetadataFromHtml ───────────────────────────────
+
+const WEEBLY_FULL_PAGE = `<!DOCTYPE html>
+<html>
+<head>
+  <title>Acne — Acknowledging Frustration | Wellness Minneapolis</title>
+  <meta property="article:published_time" content="2018-04-12T10:00:00-05:00">
+  <meta name="author" content="Dr. Sara Jean Barrett">
+</head>
+<body>
+  <div id="wsite-header" class="wsite-header"><nav>menu items here</nav></div>
+  <div id="wsite-content">
+    <div class="wsite-section-elements">
+      <div class="paragraph"><h1>Acne: Acknowledging Frustration, Finding Solutions</h1></div>
+      <div class="wsite-image"><img src="/uploads/1/3/1/0/13106539/header.jpg" alt="Acne header"></div>
+      <div class="paragraph"><p>Acne is one of the most frustrating skin conditions to manage. Most patients have tried many treatments before they walk through our doors. This article explores root causes and what really helps.</p></div>
+      <h2>Common root causes</h2>
+      <div class="paragraph"><p>Hormonal imbalances, gut microbiome disruption, and chronic inflammation are the three big drivers we see in clinic.</p></div>
+      <div class="paragraph"><p>Comments are closed.</p></div>
+    </div>
+  </div>
+  <div id="wsite-footer"><p>© 2024 Wellness Minneapolis</p></div>
+  <div class="wsite-com-displaying">Recent comments listing here</div>
+</body>
+</html>`;
+
+const extractedBody = m.extractPostBody(WEEBLY_FULL_PAGE, 'weebly');
+ok('extractPostBody picks Weebly content area',
+   extractedBody.includes('Acne is one of the most frustrating') &&
+   extractedBody.includes('Common root causes'));
+ok('extractPostBody strips wsite-header / wsite-footer',
+   !extractedBody.toLowerCase().includes('menu items here') &&
+   !extractedBody.includes('© 2024'));
+ok('extractPostBody strips wsite-com-displaying (comments listing)',
+   !extractedBody.includes('Recent comments listing'));
+
+const meta = m.extractMetadataFromHtml(WEEBLY_FULL_PAGE);
+ok('extractMetadataFromHtml gets title from <title>',
+   meta.title.includes('Acne'));
+ok('extractMetadataFromHtml gets H1 from the post body',
+   meta.h1 === 'Acne: Acknowledging Frustration, Finding Solutions');
+ok('extractMetadataFromHtml reads article:published_time',
+   meta.pub_date === '2018-04-12T10:00:00-05:00');
+ok('extractMetadataFromHtml reads author meta',
+   meta.author === 'Dr. Sara Jean Barrett');
+
+// End-to-end: fetch-then-normalize pipeline
+const e2e = m.normalizePostBody(extractedBody, { platform: 'weebly' });
+ok('end-to-end: normalized HTML keeps content paragraphs',
+   e2e.includes('Acne is one of the most frustrating') && e2e.includes('<h2>Common root causes</h2>'));
+ok('end-to-end: normalized HTML drops "Comments are closed."',
+   !e2e.toLowerCase().includes('comments are closed'));
+ok('end-to-end: normalized HTML emits sanitized tags only (no div)',
+   !/<div/i.test(e2e));
 
 // ─── Summary ─────────────────────────────────────────────────────────────────
 
