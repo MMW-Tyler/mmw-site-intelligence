@@ -41,6 +41,8 @@ const { SYSTEM_PROMPT: SCHEMA_SYSTEM,    buildSchemaUserMessage }  = require('./
 const { SYSTEM_PROMPT: REPORT_SYSTEM,    buildReportUserMessage }  = require('./prompts/report');
 const sitemapAnalyzer = require('./analyzers/sitemap');
 const { SYSTEM_PROMPT: SITEMAP_SYSTEM, buildSitemapAnalysisMessage } = require('./prompts/sitemap-analysis');
+const migrate          = require('./analyzers/migrate');
+const wpMigrate        = require('./lib/wp-migrate');
 
 const app  = express();
 const PORT = parseInt(process.env.PORT, 10) || 3000;
@@ -1496,6 +1498,472 @@ app.post('/api/sitemap/export', (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ─── Migrate tab (blog migration to WordPress) ───────────────────────────────
+// Four-step flow: discover → sample-test → connection-test → push.
+// Server-side enforces that sample-test and connection-test have been called
+// successfully in this session before /push will run. The gate state is
+// in-memory only — simple and good enough for an internal tool.
+
+const migrateSessions = new Map(); // crawlId → { sampleOk, connectionOk, lastTouched }
+
+function migrateSession(crawlId) {
+  if (!migrateSessions.has(crawlId)) {
+    migrateSessions.set(crawlId, { sampleOk: false, connectionOk: false, lastTouched: Date.now() });
+  }
+  const s = migrateSessions.get(crawlId);
+  s.lastTouched = Date.now();
+  return s;
+}
+
+// Periodically evict sessions older than 2h (no-op cleanup so the map doesn't grow unbounded)
+setInterval(() => {
+  const cutoff = Date.now() - 2 * 60 * 60 * 1000;
+  for (const [k, v] of migrateSessions.entries()) {
+    if (v.lastTouched < cutoff) migrateSessions.delete(k);
+  }
+}, 30 * 60 * 1000).unref();
+
+const RSS_AUTOFIND_PATHS = ['/feed', '/1/feed', '/blog?format=rss', '/rss', '/blog/feed', '/articles/feed'];
+
+async function tryFetchRss(siteUrl) {
+  if (!siteUrl) return { url: null, xml: null };
+  const origin = (() => { try { return new URL(siteUrl).origin; } catch (_) { return ''; } })();
+  if (!origin) return { url: null, xml: null };
+
+  for (const p of RSS_AUTOFIND_PATHS) {
+    const url = origin + p;
+    try {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'MMW-Site-Intelligence/1.0 RSS-discover' },
+        signal:  AbortSignal.timeout(15_000),
+      });
+      if (!res.ok) continue;
+      const ct = (res.headers.get('content-type') || '').toLowerCase();
+      const xml = await res.text();
+      if (xml && (ct.includes('xml') || xml.trim().startsWith('<?xml') || xml.includes('<rss') || xml.includes('<feed'))) {
+        return { url, xml };
+      }
+    } catch (_) { /* try next */ }
+  }
+  return { url: null, xml: null };
+}
+
+// GET /api/migrate/:crawlId/discover
+//   Query: rssUrl? (override URL or "none"), urlPatterns? (comma-separated)
+app.get('/api/migrate/:crawlId/discover', async (req, res) => {
+  try {
+    const { crawl, client } = await resolveCrawlAndClient(req.params.crawlId);
+    if (!crawl) return res.status(404).json({ error: 'Crawl not found' });
+
+    const pages = await store.getCrawlPages(crawl.id);
+
+    const patternsParam = (req.query.urlPatterns || '').trim();
+    const urlPatterns = patternsParam
+      ? patternsParam.split(',').map(s => s.trim()).filter(Boolean)
+      : [];
+
+    const candidates = migrate.detectBlogPosts(pages, {
+      siteUrl:      crawl.target_url,
+      urlPatterns,
+      minWordCount: 150,
+    });
+
+    // RSS — explicit URL, auto-detect, or skip
+    let rssXml = null, rssUrl = null;
+    const rssParam = (req.query.rssUrl || '').trim();
+    if (rssParam === 'none') {
+      rssXml = null;
+    } else if (rssParam) {
+      try {
+        const r = await fetch(rssParam, { headers: { 'User-Agent': 'MMW-Site-Intelligence/1.0' }, signal: AbortSignal.timeout(15_000) });
+        if (r.ok) { rssXml = await r.text(); rssUrl = rssParam; }
+      } catch (_) { /* leave null */ }
+    } else {
+      const found = await tryFetchRss(crawl.target_url);
+      rssXml = found.xml;
+      rssUrl = found.url;
+    }
+
+    const rssItems = rssXml ? migrate.parseRssFeed(rssXml) : [];
+    const merged   = migrate.mergeRssWithPages(rssItems, candidates);
+
+    // Detect platform from one sample page
+    const samplePage = pages.find(p => /\/articles\//.test(p.url) || /\/blog\//.test(p.url));
+    const platform   = migrate.detectPlatform(crawl.target_url, (samplePage && samplePage.extracted_body) || '');
+
+    // Strip private fields before returning
+    const safe = merged.map(c => ({
+      url:             c.url,
+      title:           c.title,
+      h1:              c.h1,
+      word_count:      c.word_count,
+      image_count:     c.image_count,
+      pub_date:        c.pub_date,
+      author:          c.author,
+      category:        c.category,
+      slug:            c.slug,
+      rss_enriched:    c.rss_enriched,
+      default_checked: c.default_checked,
+    }));
+
+    res.json({
+      crawlId:       crawl.id,
+      crawl:         { id: crawl.id, target_url: crawl.target_url, clients: crawl.clients },
+      clientId:      client ? client.id : null,
+      hasWpCreds:    !!(client && client.wp_url && client.wp_username && client.wp_app_password),
+      wp_url:        (client && client.wp_url)      || '',
+      wp_username:   (client && client.wp_username) || '',
+      platform,
+      rssDetected:   !!rssUrl,
+      rssUrl:        rssUrl || null,
+      rssItemCount:  rssItems.length,
+      posts:         safe,
+    });
+  } catch (err) {
+    console.error('[migrate discover] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/migrate/:crawlId/sample-test
+//   body: { urls: [...] }   — server picks 3 representative, runs full extraction + normalize
+app.post('/api/migrate/:crawlId/sample-test', async (req, res) => {
+  const { urls } = req.body || {};
+  if (!Array.isArray(urls) || urls.length === 0) {
+    return res.status(400).json({ error: 'urls array is required' });
+  }
+  try {
+    const { crawl } = await resolveCrawlAndClient(req.params.crawlId);
+    if (!crawl) return res.status(404).json({ error: 'Crawl not found' });
+
+    const pages    = await store.getCrawlPages(crawl.id);
+    const urlSet   = new Set(urls);
+    const selected = pages.filter(p => urlSet.has(p.url));
+    if (selected.length === 0) {
+      return res.status(400).json({ error: 'No matching pages found for the provided URLs' });
+    }
+
+    // Run discovery against the selected subset so we have RSS-enriched metadata
+    const candidates = migrate.detectBlogPosts(selected, { minWordCount: 1 });
+
+    // Pick 3 representative
+    const samples = migrate.pickRepresentativeSamples(candidates);
+
+    // Detect platform from the first sample's HTML
+    const platform = migrate.detectPlatform(crawl.target_url, (selected[0] && selected[0].extracted_body) || '');
+
+    const out = samples.map(c => {
+      const rawBody     = c._extracted_body || '';
+      const normalized  = migrate.normalizePostBody(rawBody, { platform });
+      const images      = migrate.extractInlineImages(rawBody);
+      return {
+        url:             c.url,
+        platform,
+        metadata: {
+          title:    c.title,
+          slug:     c.slug,
+          pub_date: c.pub_date,
+          author:   c.author,
+          category: c.category,
+        },
+        raw_html:        rawBody,
+        normalized_html: normalized,
+        images,
+      };
+    });
+
+    // Flag the gate
+    migrateSession(crawl.id).sampleOk = true;
+    res.json({ samples: out, platform });
+  } catch (err) {
+    console.error('[migrate sample-test] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/migrate/:crawlId/connection-test
+//   Runs four checks: auth, capabilities, media round-trip, category round-trip.
+app.post('/api/migrate/:crawlId/connection-test', async (req, res) => {
+  try {
+    const { crawl, client } = await resolveCrawlAndClient(req.params.crawlId);
+    if (!crawl) return res.status(404).json({ error: 'Crawl not found' });
+    if (!client || !client.wp_url || !client.wp_username || !client.wp_app_password) {
+      return res.status(400).json({ error: 'WordPress credentials not configured for this client' });
+    }
+
+    const auth = { username: client.wp_username, appPassword: client.wp_app_password };
+    const checks = [];
+
+    // 1. Authentication + capabilities
+    const verify = await wpMigrate.verifyCredentials(client.wp_url, client.wp_username, client.wp_app_password);
+    checks.push({
+      name:   'Authentication',
+      ok:     !!verify.user_id,
+      detail: verify.user_id
+        ? `Connected as "${verify.user_name || verify.user_slug || client.wp_username}" (user #${verify.user_id})`
+        : (verify.error || 'Authentication failed'),
+    });
+    checks.push({
+      name:   'Required capabilities',
+      ok:     !!verify.ok,
+      detail: verify.ok
+        ? 'User has publish_posts and upload_files capabilities'
+        : (verify.error || 'Missing required capabilities'),
+    });
+
+    // 2. Image round-trip
+    let mediaCheck = { name: 'Image upload round-trip', ok: false, detail: 'Not attempted' };
+    if (verify.ok) {
+      try {
+        const uploaded = await wpMigrate.uploadMedia(client.wp_url, auth, {
+          buffer:   wpMigrate.TEST_PNG,
+          filename: `mmw-migration-test-${Date.now()}.png`,
+          mimeType: 'image/png',
+          alt:      'MMW migration test',
+        });
+        try {
+          await wpMigrate.deleteMedia(client.wp_url, auth, uploaded.media_id);
+          mediaCheck = { name: 'Image upload round-trip', ok: true, detail: `Uploaded test image (id ${uploaded.media_id}) and deleted successfully` };
+        } catch (delErr) {
+          mediaCheck = { name: 'Image upload round-trip', ok: false, detail: `Uploaded id ${uploaded.media_id} but cleanup failed: ${delErr.message}` };
+        }
+      } catch (upErr) {
+        mediaCheck = { name: 'Image upload round-trip', ok: false, detail: upErr.message };
+      }
+    }
+    checks.push(mediaCheck);
+
+    // 3. Category round-trip
+    let catCheck = { name: 'Category create/delete', ok: false, detail: 'Not attempted' };
+    if (verify.ok) {
+      try {
+        const cache = wpMigrate.makeTermCache();
+        const testName = `mmw-migration-test-${Date.now()}`;
+        const id = await wpMigrate.ensureCategory(client.wp_url, auth, testName, cache);
+        try {
+          await wpMigrate.deleteCategory(client.wp_url, auth, id);
+          catCheck = { name: 'Category create/delete', ok: true, detail: `Created "${testName}" (id ${id}) and deleted successfully` };
+        } catch (delErr) {
+          catCheck = { name: 'Category create/delete', ok: false, detail: `Created id ${id} but cleanup failed: ${delErr.message}` };
+        }
+      } catch (e) {
+        catCheck = { name: 'Category create/delete', ok: false, detail: e.message };
+      }
+    }
+    checks.push(catCheck);
+
+    const allOk = checks.every(c => c.ok);
+    migrateSession(crawl.id).connectionOk = allOk;
+    res.json({ ok: allOk, checks });
+  } catch (err) {
+    console.error('[migrate connection-test] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/migrate/:crawlId/push
+//   body: { urls: [...], migrate_images: bool, post_status: 'draft'|'publish',
+//           category_map?: {}, author_map?: {} }
+//   SSE stream of per-post events.
+app.post('/api/migrate/:crawlId/push', async (req, res) => {
+  const {
+    urls,
+    migrate_images = true,
+    post_status    = 'draft',
+    category_map   = {},
+  } = req.body || {};
+
+  if (!Array.isArray(urls) || urls.length === 0) {
+    return res.status(400).json({ error: 'urls array is required' });
+  }
+  if (post_status !== 'draft' && post_status !== 'publish') {
+    return res.status(400).json({ error: 'post_status must be "draft" or "publish"' });
+  }
+
+  let crawl, client;
+  try {
+    ({ crawl, client } = await resolveCrawlAndClient(req.params.crawlId));
+    if (!crawl) return res.status(404).json({ error: 'Crawl not found' });
+    if (!client || !client.wp_url || !client.wp_username || !client.wp_app_password) {
+      return res.status(400).json({ error: 'WordPress credentials not configured for this client' });
+    }
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+
+  // Enforce the verification gate
+  const sess = migrateSession(crawl.id);
+  if (!sess.sampleOk || !sess.connectionOk) {
+    return res.status(412).json({
+      error: 'Verification gate not satisfied. Run sample-test and connection-test successfully in this session before pushing.',
+      sampleOk:     sess.sampleOk,
+      connectionOk: sess.connectionOk,
+    });
+  }
+
+  const auth = { username: client.wp_username, appPassword: client.wp_app_password };
+
+  // SSE setup
+  const emit = sseEmitter(res);
+  let cancelled = false;
+  req.on('close', () => { cancelled = true; });
+
+  try {
+    emit('log', { message: `Loading ${urls.length} pages from crawl data...` });
+    const allPages = await store.getCrawlPages(crawl.id);
+    const urlSet   = new Set(urls);
+    const selected = allPages.filter(p => urlSet.has(p.url));
+    if (selected.length === 0) {
+      emit('error', { message: 'No matching pages found for the provided URLs.' });
+      return res.end();
+    }
+
+    const candidates = migrate.detectBlogPosts(selected, { minWordCount: 1 });
+
+    // Re-enrich with RSS to get dates/authors/categories
+    const rssFound = await tryFetchRss(crawl.target_url).catch(() => ({ xml: null }));
+    const rssItems = rssFound.xml ? migrate.parseRssFeed(rssFound.xml) : [];
+    const enriched = migrate.mergeRssWithPages(rssItems, candidates);
+
+    const platform = migrate.detectPlatform(crawl.target_url, (selected[0] && selected[0].extracted_body) || '');
+    emit('log', { message: `Detected platform: ${platform}. ${rssItems.length} RSS items merged.` });
+
+    const termCache  = wpMigrate.makeTermCache();
+    const gate       = wpMigrate.rateLimiter(700);
+    const mediaCache = new Map(); // sourceUrl → destUrl  (for duplicate uploads in same run)
+
+    let created = 0, failed = 0, skipped = 0;
+
+    for (const post of enriched) {
+      if (cancelled) {
+        emit('log', { message: 'Cancelled by client. Stopping further imports.' });
+        break;
+      }
+
+      emit('post_started', { url: post.url, title: post.title });
+
+      try {
+        // Check for slug collision in destination
+        await gate();
+        const existing = await wpMigrate.findPostBySlug(client.wp_url, auth, post.slug).catch(() => null);
+        if (existing) {
+          skipped++;
+          emit('post_failed', {
+            url:    post.url,
+            error:  `Post with slug "${post.slug}" already exists in destination (id ${existing.id}). Skipping to avoid duplicate.`,
+            skipped: true,
+          });
+          continue;
+        }
+
+        // Build raw body and image set
+        const rawBody = post._extracted_body || '';
+        const inlineImages = migrate.extractInlineImages(rawBody);
+        const urlMap = {};
+        let featuredMediaId = null;
+
+        if (migrate_images && inlineImages.length > 0) {
+          for (let i = 0; i < inlineImages.length; i++) {
+            if (cancelled) break;
+            const img = inlineImages[i];
+            const absUrl = migrate.absoluteUrl(img.original_url, post.url);
+            if (mediaCache.has(absUrl)) {
+              urlMap[img.original_url] = mediaCache.get(absUrl);
+              continue;
+            }
+            try {
+              await gate();
+              const downloaded = await fetch(absUrl, { signal: AbortSignal.timeout(60_000) });
+              if (!downloaded.ok) throw new Error(`HTTP ${downloaded.status} fetching ${absUrl}`);
+              const buf = Buffer.from(await downloaded.arrayBuffer());
+              const mimeType = downloaded.headers.get('content-type') || 'application/octet-stream';
+              const filename = (absUrl.split('/').pop() || `img-${Date.now()}`).split('?')[0].slice(0, 100) || `img-${Date.now()}.jpg`;
+
+              await gate();
+              const uploaded = await wpMigrate.uploadMedia(client.wp_url, auth, {
+                buffer:   buf,
+                filename,
+                mimeType,
+                alt:      img.alt || post.title,
+              });
+              urlMap[img.original_url] = uploaded.source_url;
+              mediaCache.set(absUrl, uploaded.source_url);
+              if (featuredMediaId == null) featuredMediaId = uploaded.media_id;
+              emit('image_uploaded', { url: post.url, source: absUrl, media_id: uploaded.media_id });
+            } catch (imgErr) {
+              emit('image_failed', { url: post.url, source: absUrl, error: imgErr.message });
+            }
+          }
+        }
+
+        const rewritten = migrate.rewriteImageUrls(rawBody, urlMap);
+        const finalHtml = migrate.normalizePostBody(rewritten, { platform });
+
+        // Categories / tags
+        const categoryNames = [];
+        const tagNames      = [];
+        if (post.category) {
+          const mapped = category_map[post.category] || post.category;
+          categoryNames.push(mapped);
+        }
+
+        const categoryIds = [];
+        for (const name of categoryNames) {
+          try { await gate(); const id = await wpMigrate.ensureCategory(client.wp_url, auth, name, termCache); if (id) categoryIds.push(id); }
+          catch (_) { /* non-fatal */ }
+        }
+        const tagIds = [];
+        for (const name of tagNames) {
+          try { await gate(); const id = await wpMigrate.ensureTag(client.wp_url, auth, name, termCache); if (id) tagIds.push(id); }
+          catch (_) { /* non-fatal */ }
+        }
+
+        // Date
+        let isoDate = null;
+        if (post.pub_date) {
+          const d = new Date(post.pub_date);
+          if (!isNaN(d.getTime())) isoDate = d.toISOString();
+        }
+
+        await gate();
+        const result = await wpMigrate.createPost(client.wp_url, auth, {
+          title:          post.title || '(untitled)',
+          content:        finalHtml,
+          status:         post_status,
+          slug:           post.slug,
+          date:           isoDate,
+          featured_media: featuredMediaId,
+          categories:     categoryIds,
+          tags:           tagIds,
+        });
+
+        created++;
+        emit('post_created', {
+          url:      post.url,
+          post_id:  result.post_id,
+          post_url: result.post_url,
+          status:   result.status,
+        });
+      } catch (e) {
+        failed++;
+        emit('post_failed', { url: post.url, error: e.message });
+      }
+    }
+
+    emit('done', {
+      total:     enriched.length,
+      created,
+      failed,
+      skipped,
+      cancelled,
+    });
+  } catch (err) {
+    console.error('[migrate push] error:', err);
+    emit('error', { message: err.message });
+  }
+  res.end();
 });
 
 // ─── Brand Voice cross-tool API (authenticated) ───────────────────────────────

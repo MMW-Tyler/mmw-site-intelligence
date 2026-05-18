@@ -735,6 +735,64 @@
   .tier-badge { display: inline-block; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-family: 'Barlow', sans-serif; background: var(--border); color: var(--dark-mid); font-weight: 600; }
   .sitemap-strategy-box { background: var(--green-lighter); border: 1px solid var(--green); border-radius: 8px; padding: 14px 18px; font-family: 'Barlow', sans-serif; font-size: 13px; line-height: 1.6; color: var(--dark); }
 
+  /* ── MIGRATE TAB ── */
+  .mig-step { position: relative; }
+  .mig-step-header { display: flex; align-items: flex-start; gap: 14px; }
+  .mig-step-num {
+    flex: 0 0 32px; width: 32px; height: 32px; border-radius: 50%;
+    background: var(--green-lighter); color: var(--green);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Poppins', sans-serif; font-weight: 700; font-size: 14px;
+    border: 1px solid var(--border);
+  }
+  .mig-step.mig-disabled { opacity: 0.55; }
+  .mig-step.mig-disabled .mig-step-num { background: var(--bg); color: var(--text-muted); }
+  .mig-step.mig-disabled button.primary { background: var(--text-muted) !important; cursor: not-allowed; }
+  .mig-step.mig-complete .mig-step-num { background: var(--green); color: var(--white); }
+
+  .mig-option { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; padding: 10px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; }
+  .mig-option input[type="checkbox"] { margin-top: 3px; flex: 0 0 auto; }
+  .mig-option strong { display: block; font-size: 13px; color: var(--dark); margin-bottom: 2px; }
+  .mig-option .voice-hint { margin-top: 2px; }
+
+  .mig-banner { padding: 10px 14px; border-radius: 8px; font-size: 13px; font-family: 'Barlow', sans-serif; }
+  .mig-banner.ok   { background: #edfaf3; color: #1a7a4a; border: 1px solid #b7e2cf; }
+  .mig-banner.warn { background: #fffbeb; color: #92600a; border: 1px solid #f1e0a8; }
+  .mig-banner.err  { background: #fdf0f0; color: #c0392b; border: 1px solid #f1c4c4; }
+
+  .mig-sample-card { border: 1px solid var(--border); border-radius: 10px; margin-bottom: 12px; background: var(--white); }
+  .mig-sample-head { padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
+  .mig-sample-title { font-size: 14px; font-weight: 600; color: var(--dark); font-family: 'Barlow', sans-serif; }
+  .mig-sample-meta  { font-size: 11px; color: var(--text-muted); font-family: var(--mono); }
+  .mig-sample-confirm { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--dark); font-family: 'Barlow', sans-serif; }
+  .mig-sample-confirm input[type="checkbox"] { accent-color: var(--green); width: 16px; height: 16px; }
+  .mig-sample-tabs { display: flex; border-bottom: 1px solid var(--border); background: var(--bg); }
+  .mig-sample-tab  { padding: 8px 16px; font-size: 12px; font-family: 'Barlow', sans-serif; color: var(--text-secondary); background: transparent; border: none; cursor: pointer; border-bottom: 2px solid transparent; }
+  .mig-sample-tab.active { color: var(--green); border-bottom-color: var(--green); background: var(--white); }
+  .mig-sample-body { padding: 14px 16px; max-height: 380px; overflow-y: auto; }
+  .mig-sample-body pre { font-family: var(--mono); font-size: 11px; white-space: pre-wrap; word-break: break-word; color: var(--dark-mid); }
+  .mig-sample-preview { font-family: 'Lato', 'Barlow', sans-serif; font-size: 14px; line-height: 1.6; color: var(--dark); }
+  .mig-sample-preview h2 { font-family: 'Poppins', sans-serif; font-size: 18px; margin: 14px 0 8px; }
+  .mig-sample-preview h3 { font-family: 'Poppins', sans-serif; font-size: 16px; margin: 12px 0 6px; }
+  .mig-sample-preview p  { margin: 0 0 12px; }
+  .mig-sample-preview ul, .mig-sample-preview ol { margin: 0 0 12px 22px; }
+  .mig-sample-preview blockquote { border-left: 3px solid var(--green); padding-left: 12px; margin: 0 0 12px; color: var(--text-secondary); font-style: italic; }
+  .mig-sample-preview img { max-width: 100%; height: auto; border-radius: 4px; }
+  .mig-sample-images { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+  .mig-sample-images .mig-thumb { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px; text-align: center; }
+  .mig-sample-images .mig-thumb img { max-width: 100%; height: 80px; object-fit: contain; }
+  .mig-sample-images .mig-thumb .mig-thumb-cap { font-size: 10px; font-family: var(--mono); color: var(--text-muted); margin-top: 4px; word-break: break-all; }
+
+  .mig-check { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-bottom: 1px solid var(--border); font-family: 'Barlow', sans-serif; font-size: 13px; }
+  .mig-check:last-child { border-bottom: none; }
+  .mig-check .mig-check-icon { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; flex: 0 0 22px; }
+  .mig-check.ok  .mig-check-icon { background: #edfaf3; color: #1a7a4a; }
+  .mig-check.bad .mig-check-icon { background: #fdf0f0; color: #c0392b; }
+  .mig-check .mig-check-name { font-weight: 600; color: var(--dark); min-width: 200px; }
+  .mig-check .mig-check-detail { color: var(--text-secondary); font-size: 12px; }
+
+  .log-stream { background: var(--dark); color: #d6e3dd; font-family: var(--mono); font-size: 12px; line-height: 1.7; border-radius: 10px; padding: 14px 16px; }
+
 </style>
 </head>
 <body>
@@ -758,6 +816,7 @@
     <button class="tab" data-tab="voice"    onclick="switchTab('voice', this)">Brand Voice</button>
     <button class="tab" data-tab="optimize" onclick="switchTab('optimize', this)">Optimize</button>
     <button class="tab" data-tab="sitemap" onclick="switchTab('sitemap', this)">Sitemap</button>
+    <button class="tab" data-tab="migrate" onclick="switchTab('migrate', this)">Migrate</button>
   </div>
 
   <!-- ─── CLIENTS TAB ────────────────────────────────────────────────────── -->
@@ -1621,7 +1680,7 @@
       </div>
 
       <!-- Decisions table -->
-      <div class="card" style="padding-bottom:0;">
+      <div class="card" style="padding-bottom:0;" id="sm-decisions-card-anchor">
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
           <div>
             <div class="card-title" style="margin-bottom:2px;">Page Decisions</div>
@@ -1668,6 +1727,186 @@
     </div>
   </section>
 
+  <!-- ══════════════════════════════════════════════════════════════════════ -->
+  <!-- MIGRATE TAB                                                            -->
+  <!-- ══════════════════════════════════════════════════════════════════════ -->
+  <section class="tab-panel" id="panel-migrate">
+
+    <!-- Empty state -->
+    <div class="card audit-empty hidden" id="mig-empty">
+      <h3>No completed crawls yet</h3>
+      <p>Run a crawl of the source site from the Crawl tab first, then return here to migrate its blog content.</p>
+    </div>
+
+    <div class="card audit-empty hidden" id="mig-loading"><h3>Loading&hellip;</h3></div>
+
+    <!-- Main state -->
+    <div id="mig-main" class="hidden">
+
+      <!-- Toolbar -->
+      <div class="card">
+        <div class="audit-toolbar">
+          <div class="audit-context">
+            <div class="audit-context-domain" id="mig-domain">—</div>
+            <div class="audit-context-meta"   id="mig-meta">—</div>
+          </div>
+          <div class="audit-actions">
+            <select class="crawl-select" id="mig-crawl-select" onchange="loadMigrateCrawl(this.value)"></select>
+          </div>
+        </div>
+      </div>
+
+      <!-- WP destination banner -->
+      <div class="card" style="padding:16px 24px;">
+        <div class="wp-status-bar">
+          <span style="font-size:13px;font-weight:600;font-family:Barlow,sans-serif;color:var(--dark);">Destination WordPress</span>
+          <span id="mig-wp-status" class="opt-connection-status warning">Not configured</span>
+          <button class="secondary" onclick="goToClientSettings()" style="font-size:12px;padding:5px 12px;">Edit credentials &rarr;</button>
+        </div>
+      </div>
+
+      <!-- ── Panel 1: Discover ──────────────────────────────────────────── -->
+      <div class="card mig-step" id="mig-panel-1">
+        <div class="mig-step-header">
+          <div class="mig-step-num">1</div>
+          <div>
+            <div class="card-title" style="margin-bottom:2px;">Discover blog posts</div>
+            <div class="card-sub">Identify candidate posts from the source crawl. Optionally merge an RSS feed for date / author / category metadata.</div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:end;margin-top:16px;">
+          <div>
+            <label class="voice-label">RSS feed URL</label>
+            <input type="text" id="mig-rss-url" placeholder="https://example.com/feed (leave blank for auto-detect)"
+                   style="width:100%;padding:9px 12px;font-size:13px;font-family:Barlow,sans-serif;color:var(--dark);background:var(--white);border:1px solid var(--border-strong);border-radius:8px;">
+            <div class="voice-hint" id="mig-rss-status">&nbsp;</div>
+          </div>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);font-family:Barlow,sans-serif;padding-bottom:24px;">
+            <input type="checkbox" id="mig-skip-rss" style="accent-color:var(--green);"> Skip RSS
+          </label>
+          <button class="primary" id="mig-discover-btn" onclick="runMigrateDiscover()" style="padding-bottom:auto;margin-bottom:24px;">Run discovery</button>
+        </div>
+
+        <div id="mig-discover-results" class="hidden" style="margin-top:16px;">
+          <div class="filter-row" style="justify-content:space-between;gap:12px;">
+            <input type="text" id="mig-search" placeholder="Search by URL or title&hellip;" oninput="renderMigrateTable()" style="flex:1;min-width:180px;">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="secondary" onclick="migrateSelectDefaults()" style="font-size:12px;padding:7px 14px;">Select defaults</button>
+              <button class="secondary" onclick="migrateSelectAllVisible()" style="font-size:12px;padding:7px 14px;">Select visible</button>
+              <button class="secondary" onclick="migrateDeselectAll()" style="font-size:12px;padding:7px 14px;">Deselect all</button>
+            </div>
+          </div>
+
+          <div class="audit-table-wrap">
+            <table class="audit-table" id="mig-table">
+              <thead>
+                <tr>
+                  <th style="width:34px;text-align:center;cursor:default;">
+                    <input type="checkbox" id="mig-header-cb" onchange="migrateToggleVisible(this.checked)" style="accent-color:var(--green);">
+                  </th>
+                  <th>URL</th>
+                  <th>Title</th>
+                  <th>Date</th>
+                  <th>Author</th>
+                  <th>Category</th>
+                  <th class="num">Words</th>
+                  <th class="num">Imgs</th>
+                  <th>RSS</th>
+                </tr>
+              </thead>
+              <tbody id="mig-tbody"></tbody>
+            </table>
+          </div>
+          <div class="card-sub" id="mig-discover-sub" style="margin-top:8px;"></div>
+        </div>
+      </div>
+
+      <!-- ── Panel 2: Sample extraction ─────────────────────────────────── -->
+      <div class="card mig-step mig-disabled" id="mig-panel-2">
+        <div class="mig-step-header">
+          <div class="mig-step-num">2</div>
+          <div>
+            <div class="card-title" style="margin-bottom:2px;">Sample extraction</div>
+            <div class="card-sub">Test the extraction pipeline against 3 representative posts. Visually confirm each before continuing. This step does not touch WordPress.</div>
+          </div>
+        </div>
+
+        <div style="margin-top:16px;display:flex;gap:10px;align-items:center;">
+          <button class="primary" id="mig-sample-btn" onclick="runMigrateSampleTest()" disabled>Run sample test on 3 representative posts</button>
+          <span id="mig-sample-hint" style="font-size:12px;color:var(--text-muted);">Select posts in step 1 to enable.</span>
+        </div>
+
+        <div id="mig-sample-results" class="hidden" style="margin-top:16px;">
+          <div id="mig-samples-list"></div>
+          <div id="mig-sample-banner" class="mig-banner" style="margin-top:14px;"></div>
+        </div>
+      </div>
+
+      <!-- ── Panel 3: Connection test ───────────────────────────────────── -->
+      <div class="card mig-step mig-disabled" id="mig-panel-3">
+        <div class="mig-step-header">
+          <div class="mig-step-num">3</div>
+          <div>
+            <div class="card-title" style="margin-bottom:2px;">Connection &amp; permissions check</div>
+            <div class="card-sub">Verify the destination WordPress accepts the app password, has the right capabilities, and can round-trip uploads and taxonomies.</div>
+          </div>
+        </div>
+
+        <div style="margin-top:16px;display:flex;gap:10px;align-items:center;">
+          <button class="primary" id="mig-conn-btn" onclick="runMigrateConnectionTest()" disabled>Run connection test</button>
+          <span id="mig-conn-hint" style="font-size:12px;color:var(--text-muted);">Confirm all 3 samples in step 2 to enable.</span>
+        </div>
+
+        <div id="mig-conn-results" class="hidden" style="margin-top:16px;">
+          <div id="mig-conn-checklist"></div>
+          <div id="mig-conn-banner" class="mig-banner" style="margin-top:14px;"></div>
+        </div>
+      </div>
+
+      <!-- ── Panel 4: Full import ───────────────────────────────────────── -->
+      <div class="card mig-step mig-disabled" id="mig-panel-4">
+        <div class="mig-step-header">
+          <div class="mig-step-num">4</div>
+          <div>
+            <div class="card-title" style="margin-bottom:2px;">Full import</div>
+            <div class="card-sub">Push selected posts to the destination WordPress. Default status is Draft — every imported post lands in WP drafts for final review.</div>
+          </div>
+        </div>
+
+        <div id="mig-push-options" style="margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+          <label class="mig-option">
+            <input type="checkbox" id="mig-opt-images" checked style="accent-color:var(--green);">
+            <span>
+              <strong>Migrate images to destination media library</strong>
+              <div class="voice-hint">Downloads every inline image from the source and re-uploads it to WP. Disable to leave images pointing at the source domain.</div>
+            </span>
+          </label>
+          <div>
+            <label class="voice-label">Import as</label>
+            <select id="mig-opt-status" class="voice-select">
+              <option value="draft" selected>Drafts (recommended)</option>
+              <option value="publish">Published</option>
+            </select>
+            <div class="voice-hint">Drafts can be reviewed in WP admin before going live.</div>
+          </div>
+        </div>
+
+        <div style="margin-top:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <button class="primary" id="mig-push-btn" onclick="runMigratePush()" disabled>Start migration</button>
+          <button class="danger hidden" id="mig-push-cancel-btn" onclick="cancelMigratePush()">Cancel</button>
+          <span id="mig-push-hint" style="font-size:12px;color:var(--text-muted);">Pass the connection check in step 3 to enable.</span>
+        </div>
+
+        <div id="mig-push-results" class="hidden" style="margin-top:16px;">
+          <div class="log-stream" id="mig-push-log" style="max-height:340px;overflow-y:auto;"></div>
+          <div id="mig-push-summary" class="mig-banner" style="margin-top:14px;display:none;"></div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
 </main>
 
 <script>
@@ -1710,12 +1949,14 @@
     if (name === 'voice')   initVoiceTab();
     if (name === 'optimize') initOptimizeTab();
     if (name === 'sitemap')  initSitemapTab();
+    if (name === 'migrate')  initMigrateTab();
 
     // Re-fetch crawl list for already-initialized tabs so the dropdown stays fresh
     if (name === 'audit'    && auditState.initialized)    refreshCrawlSelect('audit');
     if (name === 'scout'    && scoutState.initialized)    refreshCrawlSelect('scout');
     if (name === 'voice'    && voiceState.initialized)    refreshCrawlSelect('voice');
     if (name === 'optimize' && optState.initialized)      refreshCrawlSelect('optimize');
+    if (name === 'migrate'  && migrateState.initialized)  refreshCrawlSelect('migrate');
   }
 
   async function refreshCrawlSelect(tab) {
@@ -1728,6 +1969,7 @@
       if (tab === 'scout')    populateScoutSelect(crawls);
       if (tab === 'voice')    populateVoiceSelect(crawls);
       if (tab === 'optimize') populateOptSelect(crawls);
+      if (tab === 'migrate')  populateMigrateSelect(crawls);
     } catch (_) {}
   }
 
@@ -4513,6 +4755,593 @@
     document.getElementById('sitemap-results-view').classList.add('hidden');
     document.getElementById('sitemap-progress-view').classList.add('hidden');
     updateSitemapReadyState();
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // MIGRATE TAB
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const migrateState = {
+    initialized:    false,
+    crawlId:        null,
+    crawl:          null,
+    clientId:       null,
+    hasWpCreds:     false,
+    wpUrl:          '',
+    wpUsername:     '',
+    platform:       'unknown',
+    posts:          [],
+    selected:       new Set(),
+    _visible:       [],
+    rssUrl:         null,
+    rssDetected:    false,
+    rssItemCount:   0,
+    samples:        [],
+    samplesConfirmed: [false, false, false],
+    sampleOk:       false,
+    connectionOk:   false,
+    pushES:         null,
+    pushing:        false,
+  };
+
+  async function initMigrateTab() {
+    if (migrateState.initialized) return;
+    migrateState.initialized = true;
+    showMigrateState('loading');
+    try {
+      const res = await apiFetch('/api/crawls?limit=50');
+      const { crawls } = await res.json();
+      if (!crawls || crawls.length === 0) { showMigrateState('empty'); return; }
+      populateMigrateSelect(crawls);
+      await loadMigrateCrawl(crawls[0].id);
+    } catch (e) {
+      console.error('Migrate init failed', e);
+      showMigrateState('empty');
+    }
+  }
+
+  function populateMigrateSelect(crawls) {
+    const sel = document.getElementById('mig-crawl-select');
+    sel.innerHTML = '';
+    crawls.forEach(c => {
+      const dom  = (c.clients && c.clients.domain) || 'unknown';
+      const date = (c.finished_at || '').split('T')[0];
+      const opt  = document.createElement('option');
+      opt.value       = c.id;
+      opt.textContent = `${dom} — ${date} (${c.page_count} pages)`;
+      sel.appendChild(opt);
+    });
+  }
+
+  function showMigrateState(state) {
+    document.getElementById('mig-empty').classList.toggle('hidden',   state !== 'empty');
+    document.getElementById('mig-loading').classList.toggle('hidden', state !== 'loading');
+    document.getElementById('mig-main').classList.toggle('hidden',    state !== 'main');
+  }
+
+  async function loadMigrateCrawl(crawlId) {
+    if (!crawlId) return;
+    migrateState.crawlId = crawlId;
+    // Reset downstream state when switching crawls
+    migrateState.posts = [];
+    migrateState.selected.clear();
+    migrateState.samples = [];
+    migrateState.samplesConfirmed = [false, false, false];
+    migrateState.sampleOk = false;
+    migrateState.connectionOk = false;
+    document.getElementById('mig-discover-results').classList.add('hidden');
+    document.getElementById('mig-sample-results').classList.add('hidden');
+    document.getElementById('mig-conn-results').classList.add('hidden');
+    document.getElementById('mig-push-results').classList.add('hidden');
+    refreshMigrateGates();
+    showMigrateState('main');
+
+    // Light-weight ping for crawl meta + wp creds — runs discovery only when user clicks
+    try {
+      const res = await apiFetch(`/api/migrate/${crawlId}/discover?rssUrl=none`);
+      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))).error) || res.statusText);
+      const data = await res.json();
+
+      migrateState.crawl       = data.crawl;
+      migrateState.clientId    = data.clientId;
+      migrateState.hasWpCreds  = data.hasWpCreds;
+      migrateState.wpUrl       = data.wp_url || '';
+      migrateState.wpUsername  = data.wp_username || '';
+      migrateState.platform    = data.platform;
+      migrateState.posts       = data.posts || [];
+      migrateState.selected    = new Set(migrateState.posts.filter(p => p.default_checked).map(p => p.url));
+      migrateState.rssUrl      = data.rssUrl;
+      migrateState.rssDetected = data.rssDetected;
+      migrateState.rssItemCount = data.rssItemCount || 0;
+
+      const c   = data.crawl;
+      const dom = (c.clients && c.clients.domain) || c.target_url || 'unknown';
+      const nam = (c.clients && c.clients.name)   || dom;
+      document.getElementById('mig-domain').textContent = nam;
+      document.getElementById('mig-meta').textContent =
+        `${dom} · ${migrateState.posts.length} blog candidates · platform: ${migrateState.platform}`;
+
+      // WP destination banner
+      const wpStatus = document.getElementById('mig-wp-status');
+      if (data.hasWpCreds) {
+        wpStatus.className = 'opt-connection-status ok';
+        wpStatus.textContent = `${data.wp_url} (${data.wp_username})`;
+      } else {
+        wpStatus.className = 'opt-connection-status warning';
+        wpStatus.textContent = 'Not configured — set in Clients tab';
+      }
+
+      // Auto-populate the discovery results so the picker shows on load (no RSS yet)
+      document.getElementById('mig-discover-results').classList.remove('hidden');
+      renderMigrateTable();
+      document.getElementById('mig-rss-status').textContent =
+        'Click "Run discovery" to auto-detect or use the URL above.';
+    } catch (e) {
+      console.error('Migrate load failed', e);
+      showMigrateState('empty');
+    }
+  }
+
+  async function runMigrateDiscover() {
+    if (!migrateState.crawlId) return;
+    const btn = document.getElementById('mig-discover-btn');
+    btn.disabled = true; btn.textContent = 'Discovering…';
+    const rssInput = document.getElementById('mig-rss-url').value.trim();
+    const skipRss  = document.getElementById('mig-skip-rss').checked;
+    const qp = new URLSearchParams();
+    if (skipRss) qp.set('rssUrl', 'none');
+    else if (rssInput) qp.set('rssUrl', rssInput);
+    const url = `/api/migrate/${migrateState.crawlId}/discover${qp.toString() ? '?' + qp.toString() : ''}`;
+    try {
+      const res = await apiFetch(url);
+      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))).error) || res.statusText);
+      const data = await res.json();
+      migrateState.posts        = data.posts || [];
+      migrateState.selected     = new Set(migrateState.posts.filter(p => p.default_checked).map(p => p.url));
+      migrateState.rssUrl       = data.rssUrl;
+      migrateState.rssDetected  = data.rssDetected;
+      migrateState.rssItemCount = data.rssItemCount || 0;
+      migrateState.platform     = data.platform || migrateState.platform;
+
+      const rssLine = document.getElementById('mig-rss-status');
+      if (skipRss) {
+        rssLine.textContent = 'RSS skipped — metadata will come from the crawl only.';
+      } else if (data.rssDetected) {
+        rssLine.textContent = `RSS detected at ${data.rssUrl} — ${data.rssItemCount} items merged.`;
+        document.getElementById('mig-rss-url').value = data.rssUrl;
+      } else {
+        rssLine.textContent = 'No RSS feed found at common paths. Continuing without RSS enrichment.';
+      }
+
+      document.getElementById('mig-discover-results').classList.remove('hidden');
+      renderMigrateTable();
+      // Mark step 1 complete; downstream steps still need their own actions
+      document.getElementById('mig-panel-1').classList.add('mig-complete');
+      refreshMigrateGates();
+    } catch (e) {
+      alert('Discovery failed: ' + e.message);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Run discovery';
+    }
+  }
+
+  function renderMigrateTable() {
+    const search = (document.getElementById('mig-search').value || '').toLowerCase();
+    let rows = migrateState.posts.slice();
+    if (search) {
+      rows = rows.filter(p =>
+        (p.url   || '').toLowerCase().includes(search) ||
+        (p.title || '').toLowerCase().includes(search)
+      );
+    }
+    migrateState._visible = rows.map(p => p.url);
+
+    const tbody = document.getElementById('mig-tbody');
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="9" style="padding:32px;text-align:center;color:var(--text-muted);">No blog post candidates found in this crawl.</td></tr>';
+    } else {
+      tbody.innerHTML = rows.map(renderMigrateRow).join('');
+    }
+    updateMigrateHeaderCb();
+    refreshMigrateDiscoverSub();
+  }
+
+  function renderMigrateRow(p) {
+    const checked = migrateState.selected.has(p.url) ? 'checked' : '';
+    const date    = p.pub_date ? new Date(p.pub_date).toISOString().split('T')[0] : '—';
+    const author  = p.author   || '—';
+    const cat     = p.category || '—';
+    const rss     = p.rss_enriched ? '<span style="color:var(--green);font-weight:600;">✓</span>' : '<span style="color:var(--text-muted);">—</span>';
+    return `
+      <tr>
+        <td style="text-align:center;vertical-align:middle;padding:8px 6px;">
+          <input type="checkbox" ${checked} data-url="${escapeHTML(p.url)}"
+            onchange="toggleMigratePage(this.dataset.url, this.checked)"
+            style="accent-color:var(--green);">
+        </td>
+        <td class="url-cell" title="${escapeHTML(p.url)}">
+          <a href="${escapeHTML(p.url)}" target="_blank" rel="noopener">${escapeHTML(truncate(p.url, 50))}</a>
+        </td>
+        <td>${p.title ? escapeHTML(truncate(p.title, 60)) : '<span style="color:var(--text-muted);font-style:italic;">—</span>'}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--text-secondary);">${escapeHTML(date)}</td>
+        <td style="font-size:12px;">${escapeHTML(author)}</td>
+        <td style="font-size:12px;">${escapeHTML(cat)}</td>
+        <td class="num">${p.word_count || 0}</td>
+        <td class="num">${p.image_count || 0}</td>
+        <td style="text-align:center;">${rss}</td>
+      </tr>
+    `;
+  }
+
+  function toggleMigratePage(url, checked) {
+    if (checked) migrateState.selected.add(url);
+    else         migrateState.selected.delete(url);
+    updateMigrateHeaderCb();
+    refreshMigrateDiscoverSub();
+    refreshMigrateGates();
+  }
+
+  function migrateToggleVisible(checked) {
+    migrateState._visible.forEach(url => {
+      if (checked) migrateState.selected.add(url);
+      else         migrateState.selected.delete(url);
+    });
+    renderMigrateTable();
+    refreshMigrateGates();
+  }
+
+  function migrateSelectAllVisible() {
+    migrateState._visible.forEach(url => migrateState.selected.add(url));
+    renderMigrateTable();
+    refreshMigrateGates();
+  }
+
+  function migrateDeselectAll() {
+    migrateState.selected.clear();
+    renderMigrateTable();
+    refreshMigrateGates();
+  }
+
+  function migrateSelectDefaults() {
+    migrateState.selected = new Set(migrateState.posts.filter(p => p.default_checked).map(p => p.url));
+    renderMigrateTable();
+    refreshMigrateGates();
+  }
+
+  function updateMigrateHeaderCb() {
+    const cb = document.getElementById('mig-header-cb');
+    if (!cb) return;
+    const v   = migrateState._visible;
+    const sel = v.filter(u => migrateState.selected.has(u)).length;
+    cb.indeterminate = sel > 0 && sel < v.length;
+    cb.checked       = v.length > 0 && sel === v.length;
+  }
+
+  function refreshMigrateDiscoverSub() {
+    const sub = document.getElementById('mig-discover-sub');
+    const visible = migrateState._visible.length;
+    const total   = migrateState.posts.length;
+    sub.textContent = `${visible} of ${total} shown · ${migrateState.selected.size} selected. Platform: ${migrateState.platform}. RSS items merged: ${migrateState.rssItemCount}.`;
+  }
+
+  function refreshMigrateGates() {
+    const selCount = migrateState.selected.size;
+
+    // Step 2 enable condition: ≥1 selected
+    const sampleBtn  = document.getElementById('mig-sample-btn');
+    const sampleHint = document.getElementById('mig-sample-hint');
+    const panel2 = document.getElementById('mig-panel-2');
+    if (selCount > 0 && !migrateState.pushing) {
+      sampleBtn.disabled = false;
+      panel2.classList.remove('mig-disabled');
+      sampleHint.textContent = `${selCount} post${selCount === 1 ? '' : 's'} selected.`;
+    } else {
+      sampleBtn.disabled = true;
+      panel2.classList.add('mig-disabled');
+      sampleHint.textContent = 'Select posts in step 1 to enable.';
+    }
+
+    // Step 3 enable condition: all 3 samples confirmed
+    const allConfirmed = migrateState.samples.length > 0 &&
+                         migrateState.samplesConfirmed.slice(0, migrateState.samples.length).every(Boolean);
+    migrateState.sampleOk = allConfirmed;
+    const connBtn  = document.getElementById('mig-conn-btn');
+    const connHint = document.getElementById('mig-conn-hint');
+    const panel3 = document.getElementById('mig-panel-3');
+    if (allConfirmed && migrateState.hasWpCreds) {
+      connBtn.disabled = false;
+      panel3.classList.remove('mig-disabled');
+      connHint.textContent = 'All samples confirmed. Test the destination WordPress.';
+    } else {
+      connBtn.disabled = true;
+      panel3.classList.add('mig-disabled');
+      if (!migrateState.hasWpCreds) {
+        connHint.textContent = 'Configure WordPress credentials in the Clients tab first.';
+      } else if (migrateState.samples.length === 0) {
+        connHint.textContent = 'Run the sample test in step 2 first.';
+      } else {
+        connHint.textContent = 'Confirm all 3 samples in step 2 to enable.';
+      }
+    }
+
+    // Step 4 enable condition: connection passed
+    const pushBtn  = document.getElementById('mig-push-btn');
+    const pushHint = document.getElementById('mig-push-hint');
+    const panel4 = document.getElementById('mig-panel-4');
+    if (migrateState.connectionOk && allConfirmed && selCount > 0 && !migrateState.pushing) {
+      pushBtn.disabled = false;
+      panel4.classList.remove('mig-disabled');
+      pushHint.textContent = `Ready to push ${selCount} post${selCount === 1 ? '' : 's'} to ${migrateState.wpUrl}.`;
+    } else {
+      pushBtn.disabled = true;
+      panel4.classList.add('mig-disabled');
+      if (!migrateState.connectionOk) pushHint.textContent = 'Pass the connection check in step 3 to enable.';
+      else if (selCount === 0)        pushHint.textContent = 'Select at least one post in step 1.';
+      else                            pushHint.textContent = '';
+    }
+
+    // Step completion badges
+    document.getElementById('mig-panel-2').classList.toggle('mig-complete', allConfirmed);
+    document.getElementById('mig-panel-3').classList.toggle('mig-complete', migrateState.connectionOk);
+  }
+
+  async function runMigrateSampleTest() {
+    const urls = Array.from(migrateState.selected);
+    if (urls.length === 0) return;
+    const btn = document.getElementById('mig-sample-btn');
+    btn.disabled = true; btn.textContent = 'Extracting…';
+    try {
+      const res = await apiFetch(`/api/migrate/${migrateState.crawlId}/sample-test`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ urls }),
+      });
+      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))).error) || res.statusText);
+      const data = await res.json();
+      migrateState.samples = data.samples || [];
+      migrateState.samplesConfirmed = migrateState.samples.map(() => false);
+      migrateState.platform = data.platform || migrateState.platform;
+      renderMigrateSamples();
+      document.getElementById('mig-sample-results').classList.remove('hidden');
+      updateSampleBanner();
+      refreshMigrateGates();
+    } catch (e) {
+      alert('Sample test failed: ' + e.message);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Run sample test on 3 representative posts';
+    }
+  }
+
+  function renderMigrateSamples() {
+    const list = document.getElementById('mig-samples-list');
+    list.innerHTML = migrateState.samples.map((s, i) => `
+      <div class="mig-sample-card" id="mig-sample-${i}">
+        <div class="mig-sample-head">
+          <div>
+            <div class="mig-sample-title">${escapeHTML(s.metadata.title || '(no title)')}</div>
+            <div class="mig-sample-meta">${escapeHTML(s.url)}</div>
+            <div class="mig-sample-meta" style="margin-top:4px;">
+              slug: ${escapeHTML(s.metadata.slug || '—')} ·
+              date: ${escapeHTML(s.metadata.pub_date || '—')} ·
+              author: ${escapeHTML(s.metadata.author || '—')} ·
+              category: ${escapeHTML(s.metadata.category || '—')} ·
+              images: ${s.images.length}
+            </div>
+          </div>
+          <label class="mig-sample-confirm">
+            <input type="checkbox" data-idx="${i}" onchange="confirmSample(${i}, this.checked)">
+            This looks correct
+          </label>
+        </div>
+        <div class="mig-sample-tabs" data-sample-idx="${i}">
+          <button class="mig-sample-tab active" data-view="preview" onclick="switchSampleTab(${i}, 'preview', this)">Live preview</button>
+          <button class="mig-sample-tab" data-view="normalized" onclick="switchSampleTab(${i}, 'normalized', this)">Normalized HTML</button>
+          <button class="mig-sample-tab" data-view="raw" onclick="switchSampleTab(${i}, 'raw', this)">Raw extracted</button>
+          <button class="mig-sample-tab" data-view="images" onclick="switchSampleTab(${i}, 'images', this)">Images (${s.images.length})</button>
+        </div>
+        <div class="mig-sample-body">
+          <div data-view-body="preview" class="mig-sample-preview">${s.normalized_html || '<em>(empty)</em>'}</div>
+          <div data-view-body="normalized" class="hidden"><pre>${escapeHTML(s.normalized_html || '')}</pre></div>
+          <div data-view-body="raw" class="hidden"><pre>${escapeHTML(s.raw_html || '')}</pre></div>
+          <div data-view-body="images" class="hidden">
+            ${s.images.length === 0
+              ? '<div style="font-size:13px;color:var(--text-muted);">No inline images detected.</div>'
+              : `<div class="mig-sample-images">${s.images.map(img => `
+                  <div class="mig-thumb">
+                    <img src="${escapeHTML(absUrlForPreview(img.original_url, s.url))}" alt="">
+                    <div class="mig-thumb-cap" title="${escapeHTML(img.original_url)}">${escapeHTML(truncate(img.original_url, 40))}</div>
+                  </div>
+                `).join('')}</div>`}
+          </div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function absUrlForPreview(maybeRelative, base) {
+    try { return new URL(maybeRelative, base).toString(); } catch (_) { return maybeRelative; }
+  }
+
+  function switchSampleTab(idx, view, btn) {
+    const card = document.getElementById('mig-sample-' + idx);
+    if (!card) return;
+    card.querySelectorAll('.mig-sample-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    card.querySelectorAll('[data-view-body]').forEach(el => {
+      el.classList.toggle('hidden', el.dataset.viewBody !== view);
+    });
+  }
+
+  function confirmSample(idx, checked) {
+    migrateState.samplesConfirmed[idx] = checked;
+    updateSampleBanner();
+    refreshMigrateGates();
+  }
+
+  function updateSampleBanner() {
+    const total = migrateState.samples.length;
+    const ok    = migrateState.samplesConfirmed.slice(0, total).filter(Boolean).length;
+    const banner = document.getElementById('mig-sample-banner');
+    if (total === 0) { banner.textContent = ''; banner.className = 'mig-banner'; return; }
+    if (ok === total) {
+      banner.textContent = `✓ All ${total} samples confirmed. Step 3 unlocked.`;
+      banner.className   = 'mig-banner ok';
+    } else {
+      banner.textContent = `${ok} of ${total} samples confirmed. Confirm all ${total} to proceed.`;
+      banner.className   = 'mig-banner warn';
+    }
+  }
+
+  async function runMigrateConnectionTest() {
+    const btn = document.getElementById('mig-conn-btn');
+    btn.disabled = true; btn.textContent = 'Testing…';
+    try {
+      const res = await apiFetch(`/api/migrate/${migrateState.crawlId}/connection-test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      renderConnectionChecks(data.checks || []);
+      migrateState.connectionOk = !!data.ok;
+      const banner = document.getElementById('mig-conn-banner');
+      if (data.ok) {
+        banner.textContent = '✓ All checks passed. Step 4 unlocked.';
+        banner.className   = 'mig-banner ok';
+      } else {
+        banner.textContent = 'One or more checks failed. Resolve the errors above before pushing.';
+        banner.className   = 'mig-banner err';
+      }
+      document.getElementById('mig-conn-results').classList.remove('hidden');
+      refreshMigrateGates();
+    } catch (e) {
+      const banner = document.getElementById('mig-conn-banner');
+      banner.textContent = 'Connection test failed: ' + e.message;
+      banner.className   = 'mig-banner err';
+      document.getElementById('mig-conn-results').classList.remove('hidden');
+      migrateState.connectionOk = false;
+      refreshMigrateGates();
+    } finally {
+      btn.disabled = false; btn.textContent = 'Run connection test';
+    }
+  }
+
+  function renderConnectionChecks(checks) {
+    const wrap = document.getElementById('mig-conn-checklist');
+    wrap.innerHTML = checks.map(c => `
+      <div class="mig-check ${c.ok ? 'ok' : 'bad'}">
+        <div class="mig-check-icon">${c.ok ? '✓' : '✕'}</div>
+        <div class="mig-check-name">${escapeHTML(c.name)}</div>
+        <div class="mig-check-detail">${escapeHTML(c.detail || '')}</div>
+      </div>
+    `).join('');
+  }
+
+  async function runMigratePush() {
+    const urls = Array.from(migrateState.selected);
+    if (urls.length === 0) return;
+    const migrateImages = document.getElementById('mig-opt-images').checked;
+    const postStatus    = document.getElementById('mig-opt-status').value;
+
+    const confirmMsg =
+      `Migrate ${urls.length} post${urls.length === 1 ? '' : 's'} to ${migrateState.wpUrl}?\n\n` +
+      `Status: ${postStatus === 'publish' ? 'PUBLISHED' : 'Draft'}\n` +
+      `Images: ${migrateImages ? 'will be re-uploaded' : 'will stay on source domain'}`;
+    if (!confirm(confirmMsg)) return;
+
+    const btn       = document.getElementById('mig-push-btn');
+    const cancelBtn = document.getElementById('mig-push-cancel-btn');
+    btn.disabled = true; btn.textContent = 'Migrating…';
+    cancelBtn.classList.remove('hidden');
+    migrateState.pushing = true;
+
+    document.getElementById('mig-push-results').classList.remove('hidden');
+    const log = document.getElementById('mig-push-log');
+    log.innerHTML = '';
+    const summary = document.getElementById('mig-push-summary');
+    summary.style.display = 'none';
+
+    function logLineMig(text, kind) {
+      const div = document.createElement('div');
+      div.className = 'log-line log-' + (kind || 'info');
+      const ts = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      div.innerHTML = `<span class="ts">${ts}</span>${escapeHTML(text)}`;
+      log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    let counter = { created: 0, failed: 0, skipped: 0, images: 0 };
+    const ac = new AbortController();
+    migrateState._pushAC = ac;
+
+    try {
+      const res = await apiFetch(`/api/migrate/${migrateState.crawlId}/push`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ urls, migrate_images: migrateImages, post_status: postStatus }),
+        signal: ac.signal,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || res.statusText);
+      }
+      // Parse the SSE stream
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const events = buf.split('\n\n');
+        buf = events.pop();
+        for (const evt of events) {
+          const line = evt.split('\n').find(l => l.startsWith('data:'));
+          if (!line) continue;
+          let p; try { p = JSON.parse(line.slice(5).trim()); } catch (_) { continue; }
+          if (p.type === 'log')           logLineMig(p.message, 'info');
+          else if (p.type === 'post_started')  logLineMig(`→ Starting: ${truncate(p.title || p.url, 80)}`, 'info');
+          else if (p.type === 'image_uploaded') { counter.images++; logLineMig(`  ↑ image #${p.media_id} ← ${truncate(p.source, 60)}`, 'page'); }
+          else if (p.type === 'image_failed') logLineMig(`  ✕ image upload failed (${truncate(p.source, 60)}): ${p.error}`, 'warn');
+          else if (p.type === 'post_created') { counter.created++; logLineMig(`  ✓ created post #${p.post_id} (${p.status}) — ${p.post_url}`, 'good'); }
+          else if (p.type === 'post_failed')  {
+            if (p.skipped) { counter.skipped++; logLineMig(`  ⊘ skipped: ${p.error}`, 'warn'); }
+            else           { counter.failed++;  logLineMig(`  ✕ failed: ${p.error}`, 'error'); }
+          }
+          else if (p.type === 'done') {
+            summary.style.display = 'block';
+            const ok = (p.failed === 0);
+            summary.className = 'mig-banner ' + (ok ? 'ok' : 'warn');
+            summary.textContent =
+              `${p.cancelled ? 'Cancelled. ' : 'Migration complete. '}` +
+              `${p.created} created, ${p.failed} failed, ${p.skipped} skipped (of ${p.total}).`;
+          }
+          else if (p.type === 'error') {
+            logLineMig('ERROR: ' + p.message, 'error');
+            summary.style.display = 'block';
+            summary.className = 'mig-banner err';
+            summary.textContent = 'Migration failed: ' + p.message;
+          }
+        }
+      }
+    } catch (e) {
+      if (e.name !== 'AbortError') {
+        logLineMig('Push aborted: ' + e.message, 'error');
+      } else {
+        logLineMig('Cancelled by user.', 'warn');
+      }
+    } finally {
+      migrateState.pushing = false;
+      migrateState._pushAC = null;
+      btn.disabled = false; btn.textContent = 'Start migration';
+      cancelBtn.classList.add('hidden');
+      refreshMigrateGates();
+    }
+  }
+
+  function cancelMigratePush() {
+    if (migrateState._pushAC) migrateState._pushAC.abort();
   }
 
 </script>
