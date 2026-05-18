@@ -363,19 +363,6 @@ async function resolveCrawl(idOrLatest) {
   return await store.getCrawl(idOrLatest);
 }
 
-app.get('/api/audit/:id', async (req, res) => {
-  try {
-    const crawl = await resolveCrawl(req.params.id);
-    if (!crawl) return res.status(404).json({ error: 'Crawl not found' });
-    const pages = await store.getCrawlPages(crawl.id);
-    const result = audit.analyze(pages);
-    res.json({ crawl, ...result });
-  } catch (err) {
-    console.error('[audit] error:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
 app.get('/api/audit/:id.csv', async (req, res) => {
   try {
     const crawl = await resolveCrawl(req.params.id);
@@ -394,6 +381,19 @@ app.get('/api/audit/:id.csv', async (req, res) => {
   } catch (err) {
     console.error('[audit csv] error:', err);
     res.status(500).send('Error: ' + err.message);
+  }
+});
+
+app.get('/api/audit/:id', async (req, res) => {
+  try {
+    const crawl = await resolveCrawl(req.params.id);
+    if (!crawl) return res.status(404).json({ error: 'Crawl not found' });
+    const pages = await store.getCrawlPages(crawl.id);
+    const result = audit.analyze(pages);
+    res.json({ crawl, ...result });
+  } catch (err) {
+    console.error('[audit] error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
