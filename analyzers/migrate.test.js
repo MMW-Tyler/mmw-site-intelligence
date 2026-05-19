@@ -235,6 +235,89 @@ ok('end-to-end: normalized HTML drops "Comments are closed."',
 ok('end-to-end: normalized HTML emits sanitized tags only (no div)',
    !/<div/i.test(e2e));
 
+// ─── Weebly blog-content variant (real-world Wellness Minneapolis markup) ───
+
+const WEEBLY_BLOG_PAGE = `<!DOCTYPE html>
+<html>
+<head><title>Acupuncture for Trigger Finger | Wellness Minneapolis</title></head>
+<body>
+  <div id="wsite-header"><nav>site menu</nav></div>
+  <div id="wsite-content">
+    <div id="blog-post-487609475861189751" class="blog-post">
+      <div class="blog-header">
+        <h2 class="blog-title"><a href="//x/articles/acupuncture-for-trigger-finger">Acupuncture for trigger finger</a></h2>
+        <p class="blog-date"><span class="date-text">4/17/2015</span></p>
+      </div>
+      <div class="blog-separator">&nbsp;</div>
+      <div class="blog-content">
+        <div class="paragraph" style="text-align:left;">By Marian Kimball Eichinger, LAc</div>
+        <blockquote><span style="color:rgb(160,160,160);">The patient is thrilled that she was able to treat her trigger finger without surgery.</span></blockquote>
+        <div class="paragraph"><p>I would like to share my experience successfully treating trigger finger with acupuncture. After a complete round of acupuncture treatments, my patient has full use of her fingers and did not have to endure surgery and the recovery process therein.</p></div>
+        <h2>What is trigger finger?</h2>
+        <div class="paragraph"><p>Trigger Finger is a condition otherwise known as stenosing tenosynovitis.</p></div>
+      </div>
+      <div class="blog-social">
+        <div class="blog-fb-like"><fb:like href="..."></fb:like></div>
+        <a class="twitter-share-button" href="http://twitter.com/share?url=...">Tweet</a>
+      </div>
+      <div class="blog-comments-bottom"></div>
+      <div class="blog-post-separator"></div>
+    </div>
+    <div id="commentArea">
+      <div class="blog-comment-area">
+        <div class="blogCommentWrap">
+          <div class="blogCommentHeading"><div class="blogCommentAuthor"><span class="name">Nick G Triantafillou</span></div></div>
+          <div class="blogCommentText"><p>This is a visitor comment that should NEVER end up in the migrated post body.</p></div>
+        </div>
+        <div class="blog-notice-comments-closed">Comments are closed.</div>
+      </div>
+    </div>
+  </div>
+  <div id="wsite-footer">© 2024 Wellness Minneapolis</div>
+</body>
+</html>`;
+
+const blogBody = m.extractPostBody(WEEBLY_BLOG_PAGE, 'weebly');
+ok('extractPostBody (blog-content variant) picks .blog-content',
+   blogBody.includes('share my experience successfully treating trigger finger') &&
+   blogBody.includes('What is trigger finger?'));
+ok('extractPostBody (blog-content variant) excludes .blog-header title duplicate',
+   !blogBody.includes('class="blog-title"'));
+ok('extractPostBody (blog-content variant) excludes #commentArea',
+   !blogBody.includes('visitor comment that should NEVER') &&
+   !blogBody.toLowerCase().includes('comments are closed'));
+ok('extractPostBody (blog-content variant) excludes .blog-social',
+   !blogBody.toLowerCase().includes('twitter.com/share') &&
+   !blogBody.toLowerCase().includes('blog-fb-like'));
+
+const blogMeta = m.extractMetadataFromHtml(WEEBLY_BLOG_PAGE);
+ok('extractMetadataFromHtml reads .blog-title for Weebly',
+   blogMeta.h1 === 'Acupuncture for trigger finger');
+ok('extractMetadataFromHtml reads .blog-date for Weebly',
+   (blogMeta.pub_date || '').includes('4/17/2015'));
+
+const blogE2E = m.normalizePostBody(blogBody, { platform: 'weebly' });
+ok('end-to-end (blog-content variant): keeps the post H2',
+   blogE2E.includes('What is trigger finger'));
+ok('end-to-end (blog-content variant): keeps the blockquote',
+   blogE2E.toLowerCase().includes('<blockquote'));
+ok('end-to-end (blog-content variant): all div wrappers stripped',
+   !/<div/i.test(blogE2E));
+
+// URL exclude: Weebly previous/next pagination
+const paginationPages = [
+  { url: 'https://x.com/articles/previous/2',  status_code: 200, indexability: 'Indexable', h1: 'archive', word_count: 17000, extracted_body: '<p>x</p>', extracted_text: 'x' },
+  { url: 'https://x.com/articles/next/3',      status_code: 200, indexability: 'Indexable', h1: 'archive', word_count: 17000, extracted_body: '<p>x</p>', extracted_text: 'x' },
+  { url: 'https://x.com/articles/real-post',   status_code: 200, indexability: 'Indexable', h1: 'Post',    word_count: 500,   extracted_body: '<p>x</p>', extracted_text: 'x' },
+];
+const paginationDetected = m.detectBlogPosts(paginationPages, { minWordCount: 100 });
+ok('detectBlogPosts excludes /previous/N pagination',
+   !paginationDetected.some(d => /\/previous\/\d/.test(d.url)));
+ok('detectBlogPosts excludes /next/N pagination',
+   !paginationDetected.some(d => /\/next\/\d/.test(d.url)));
+ok('detectBlogPosts keeps the real article URL',
+   paginationDetected.some(d => /real-post$/.test(d.url)));
+
 // ─── Summary ─────────────────────────────────────────────────────────────────
 
 console.log('');

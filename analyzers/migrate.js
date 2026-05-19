@@ -47,6 +47,7 @@ const EXCLUDE_URL_PATTERNS = [
   /\/(cart|checkout|my-account|login|register|wp-login|wp-admin|wp-json|feed|xmlrpc)\/?$/i,
   /\/(contact|about|services|team|staff|location|hours|pricing|appointment|book|schedule)\/?$/i,
   /\/page\/\d+\/?$/i,
+  /\/(previous|next)\/\d+\/?$/i,
   /\/(category|tag|author|archive)\//i,
   /\.(pdf|jpg|jpeg|png|gif|svg|webp|css|js|xml|zip)$/i,
 ];
@@ -479,11 +480,14 @@ function buildSlug(title, fallbackUrl) {
 
 const PLATFORM_BODY_SELECTORS = {
   weebly: [
-    '#wsite-content',
-    '.wsite-section-elements',
-    '.wsite-section-content',
+    // Most specific first — Weebly's blog template wraps each post in
+    // .blog-post and the body content alone is in .blog-content.
     'div.blog-content',
     'div.blog-post',
+    // Page-level fallbacks for non-blog Weebly content
+    '.wsite-section-elements',
+    '.wsite-section-content',
+    '#wsite-content',
   ],
   wordpress: [
     '.entry-content',
@@ -534,6 +538,13 @@ const BODY_STRIP_SELECTORS = [
   '.wsite-header', '.wsite-footer', '.wsite-nav',
   '.wsite-search-content', '.wsite-blog-aside', '.blog-sidebar',
   '#wsite-header', '#wsite-footer', '#wsite-nav',
+  // Weebly blog template noise (header/title/date/social/comments/separators)
+  '.blog-header', '.blog-social', '.blog-fb-like',
+  '.blog-comments-bottom', '.blog-post-separator', '.blog-separator',
+  '.blog-notice-comments-closed',
+  '#commentArea', '.blog-comment-area', '.blogCommentWrap',
+  '.blogCommentHeading', '.blogCommentText', '.blogCommentOptions',
+  '.blogCommentReplyWrapper',
   'script', 'style', 'noscript', 'iframe', 'form',
 ];
 
@@ -565,17 +576,21 @@ function extractMetadataFromHtml(fullHtml) {
   if (!fullHtml) return { title: '', h1: '', pub_date: null, author: null };
   const $ = cheerio.load(fullHtml);
 
+  // Title: og:title → Weebly .blog-title → <title>
+  const blogTitle = $('.blog-title').first().text().trim();
   const title = ($('meta[property="og:title"]').attr('content') ||
+                 blogTitle ||
                  $('title').text() || '').trim();
 
   // Prefer the H1 inside the main content area (not site-wide H1)
   let h1 = '';
-  for (const sel of ['article h1', '.entry-content h1', '.post-content h1', '.wsite-section-elements h1', 'main h1', 'h1']) {
+  for (const sel of ['article h1', '.entry-content h1', '.post-content h1', '.wsite-section-elements h1', '.blog-title', 'main h1', 'h1']) {
     const t = $(sel).first().text().trim();
     if (t) { h1 = t; break; }
   }
 
-  // Date: og:published_time, article:published_time, <time> tag, common meta
+  // Date: og:published_time, article:published_time, <time> tag, common meta,
+  // Weebly .blog-date .date-text
   let pubDate = null;
   const dateCandidates = [
     $('meta[property="article:published_time"]').attr('content'),
@@ -584,6 +599,8 @@ function extractMetadataFromHtml(fullHtml) {
     $('time[datetime]').first().attr('datetime'),
     $('meta[name="pubdate"]').attr('content'),
     $('meta[name="date"]').attr('content'),
+    $('.blog-date .date-text').first().text().trim(),
+    $('.blog-date').first().text().trim(),
   ].filter(Boolean);
   if (dateCandidates.length > 0) pubDate = dateCandidates[0];
 
