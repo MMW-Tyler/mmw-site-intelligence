@@ -318,6 +318,35 @@ ok('detectBlogPosts excludes /next/N pagination',
 ok('detectBlogPosts keeps the real article URL',
    paginationDetected.some(d => /real-post$/.test(d.url)));
 
+// Weebly image wrappers — unwrap href-less <a> around images, strip multicol layout tables
+const WEEBLY_AUTHOR_BIO_TAIL = `
+<div class="paragraph"><p>Real post content goes here and survives.</p></div>
+<hr style="visibility:hidden;">
+<div class="wsite-multicol-table-wrap"><table class="wsite-multicol-table"><tbody><tr>
+  <td class="wsite-multicol-col">
+    <div class="wsite-image"><a> <img src="/uploads/x/author.jpg" alt="Picture"> </a></div>
+  </td>
+  <td class="wsite-multicol-col">
+    <div class="paragraph">Dr. Barrett believes that effective healthcare is a collaborative partnership. This is boilerplate author bio that should NOT be migrated as post body.</div>
+  </td>
+</tr></tbody></table></div>`;
+
+const HREFLESS_LINK_AROUND_IMG = `
+<div class="wsite-image"><a> <img src="/uploads/x.jpg" alt="alt"> </a></div>
+<div class="paragraph">More text after image.</div>
+`;
+const cleanedHrefless = m.cleanWeeblyArtifacts(HREFLESS_LINK_AROUND_IMG);
+ok('cleanWeeblyArtifacts unwraps href-less <a> around images',
+   !/<a[^>]*>\s*<img/i.test(cleanedHrefless) && cleanedHrefless.includes('<img'));
+
+const normalizedTail = m.normalizePostBody(WEEBLY_AUTHOR_BIO_TAIL, { platform: 'weebly' });
+ok('normalizePostBody keeps the real post text', normalizedTail.includes('Real post content goes here'));
+ok('normalizePostBody strips wsite-multicol author-bio block',
+   !normalizedTail.includes('boilerplate author bio') &&
+   !/<table/.test(normalizedTail));
+ok('normalizePostBody final HTML has no empty <a>',
+   !/<a>\s*<\/a>|<a>\s*<img/.test(normalizedTail));
+
 // ─── Summary ─────────────────────────────────────────────────────────────────
 
 console.log('');

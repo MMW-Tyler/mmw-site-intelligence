@@ -342,9 +342,14 @@ function cleanWeeblyArtifacts(html) {
   if (!html) return '';
   const $ = cheerio.load(html, null, false);
 
+  // Drop entirely: layout-only multicol tables Weebly appends to posts (spacers
+  // or boilerplate author-bio blocks). WordPress handles author bios via
+  // user profile fields — they don't belong in post body.
+  $('.wsite-multicol-table-wrap, .wsite-multicol-table, .wsite-multicol').remove();
+
   // Unwrap typical Weebly container divs
   const unwrapSelectors = [
-    'div.wsite-image', 'div.wsite-multicol', 'div.wsite-multicol-table',
+    'div.wsite-image',
     'div.wsite-multicol-col', 'div.wsite-spacer', 'div.wsite-section-content',
     'div.wsite-section-elements', 'div.paragraph', 'div.imageWrapper',
     'div.imageCaption', 'div.captioned-image-container',
@@ -381,6 +386,13 @@ function cleanWeeblyArtifacts(html) {
   // Strip empty paragraphs
   $('p').each((_, el) => {
     if (!$(el).text().trim() && $(el).find('img').length === 0) $(el).remove();
+  });
+
+  // Weebly often wraps images in href-less <a> tags (<a> <img ...></a>).
+  // Unwrap them so we don't ship dead links.
+  $('a').each((_, el) => {
+    const href = ($(el).attr('href') || '').trim();
+    if (!href) { $(el).replaceWith($(el).contents()); }
   });
 
   return $.html();
@@ -545,6 +557,11 @@ const BODY_STRIP_SELECTORS = [
   '#commentArea', '.blog-comment-area', '.blogCommentWrap',
   '.blogCommentHeading', '.blogCommentText', '.blogCommentOptions',
   '.blogCommentReplyWrapper',
+  // Weebly layout-only multicol tables — usually spacers or boilerplate
+  // author-bio blocks appended after the actual post content.
+  '.wsite-multicol-table-wrap', '.wsite-multicol-table',
+  '.wsite-multicol', '.wsite-spacer',
+  '.imgPusher',
   'script', 'style', 'noscript', 'iframe', 'form',
 ];
 
