@@ -336,6 +336,18 @@ function rewriteImageUrls(html, urlMap) {
   return $.html();
 }
 
+// Remove a specific <img> from a body HTML by its src — used to avoid
+// duplicating the featured image inside the post body. Sibling caption
+// elements (e.g. "Photo by X @ Unsplash") are preserved.
+function removeImageFromHtml(html, src) {
+  if (!html || !src) return html || '';
+  const $ = cheerio.load(html, null, false);
+  $('img').each((_, el) => {
+    if ($(el).attr('src') === src) $(el).remove();
+  });
+  return $.html();
+}
+
 // ─── Platform-specific cleaners ───────────────────────────────────────────────
 
 function cleanWeeblyArtifacts(html) {
@@ -674,6 +686,7 @@ module.exports = {
   mergeRssWithPages,
   extractInlineImages,
   rewriteImageUrls,
+  removeImageFromHtml,
   cleanWeeblyArtifacts,
   cleanSquarespaceArtifacts,
   cleanWixArtifacts,

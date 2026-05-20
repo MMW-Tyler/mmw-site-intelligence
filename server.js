@@ -1916,6 +1916,7 @@ app.post('/api/migrate/:crawlId/push', async (req, res) => {
         }
 
         const inlineImages = migrate.extractInlineImages(rawBody);
+        let featuredOriginalSrc = null;
         const urlMap = {};
         let featuredMediaId = null;
 
@@ -1945,7 +1946,10 @@ app.post('/api/migrate/:crawlId/push', async (req, res) => {
               });
               urlMap[img.original_url] = uploaded.source_url;
               mediaCache.set(absUrl, uploaded.source_url);
-              if (featuredMediaId == null) featuredMediaId = uploaded.media_id;
+              if (featuredMediaId == null) {
+                featuredMediaId    = uploaded.media_id;
+                featuredOriginalSrc = img.original_url;
+              }
               emit('image_uploaded', { url: post.url, source: absUrl, media_id: uploaded.media_id });
             } catch (imgErr) {
               emit('image_failed', { url: post.url, source: absUrl, error: imgErr.message });
@@ -1953,7 +1957,13 @@ app.post('/api/migrate/:crawlId/push', async (req, res) => {
           }
         }
 
-        const rewritten = migrate.rewriteImageUrls(rawBody, urlMap);
+        // Remove the image promoted to featured_media from the body so it
+        // doesn't render twice (once as WP's featured image, once inline).
+        // Sibling caption text (e.g. "Photo by X @ Unsplash") is preserved.
+        const bodyMinusFeatured = featuredOriginalSrc
+          ? migrate.removeImageFromHtml(rawBody, featuredOriginalSrc)
+          : rawBody;
+        const rewritten = migrate.rewriteImageUrls(bodyMinusFeatured, urlMap);
         const finalHtml = migrate.normalizePostBody(rewritten, { platform });
 
         // Categories / tags

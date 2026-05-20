@@ -347,6 +347,25 @@ ok('normalizePostBody strips wsite-multicol author-bio block',
 ok('normalizePostBody final HTML has no empty <a>',
    !/<a>\s*<\/a>|<a>\s*<img/.test(normalizedTail));
 
+// removeImageFromHtml — used to drop the featured image from the body so
+// WordPress doesn't render it twice. Caption text must be preserved.
+const BODY_WITH_FEATURED = `
+<div class="wsite-image">
+  <a> <img src="/uploads/hero.jpg" alt="Hero"> </a>
+  <div style="font-size:90%">Photo by Kelly Sikkema on Unsplash</div>
+</div>
+<p>The actual post starts here. <img src="/uploads/inline.jpg" alt="inline"></p>
+`;
+const stripped = m.removeImageFromHtml(BODY_WITH_FEATURED, '/uploads/hero.jpg');
+ok('removeImageFromHtml drops the matching <img>',
+   !stripped.includes('hero.jpg'));
+ok('removeImageFromHtml preserves the caption text next to the dropped image',
+   stripped.includes('Photo by Kelly Sikkema on Unsplash'));
+ok('removeImageFromHtml leaves other inline images alone',
+   stripped.includes('inline.jpg'));
+ok('removeImageFromHtml is a no-op when src is null',
+   m.removeImageFromHtml(BODY_WITH_FEATURED, null) === BODY_WITH_FEATURED);
+
 // ─── Summary ─────────────────────────────────────────────────────────────────
 
 console.log('');
