@@ -158,7 +158,7 @@ function detectBlogPosts(pages, options) {
       pub_date:         null,
       author:           null,
       category:         null,
-      slug:             buildSlug(p.title || p.h1 || '', p.url),
+      slug:             slugFromUrl(p.url) || buildSlug(p.title || p.h1 || '', p.url),
       rss_enriched:     false,
       default_checked:  matchesUrl,
       _extracted_body:  p.extracted_body || '',
@@ -291,6 +291,18 @@ function mergeRssWithPages(rssItems, candidates) {
 
 // ─── Image extraction & rewriting ─────────────────────────────────────────────
 
+// Platform-chrome image URLs we never want to migrate — Weebly auto-inserts
+// these next to PDF download links, file icons, etc. They're UI, not content.
+const PLATFORM_CHROME_IMG_PATTERNS = [
+  /weebly\.com\/weebly\/images\//i,
+  /squarespace\.com\/static\/.*icons?\//i,
+  /wix-static\.com\/.*icons?\//i,
+];
+
+function isPlatformChromeImage(src) {
+  return PLATFORM_CHROME_IMG_PATTERNS.some(re => re.test(src));
+}
+
 function extractInlineImages(html) {
   if (!html) return [];
   const $ = cheerio.load(html);
@@ -300,6 +312,7 @@ function extractInlineImages(html) {
     const src = $(el).attr('src') || '';
     if (!src) return;
     if (src.startsWith('data:')) return;
+    if (isPlatformChromeImage(src)) return;
     if (seen.has(src)) return;
     seen.add(src);
     out.push({
@@ -358,6 +371,13 @@ function cleanWeeblyArtifacts(html) {
   // or boilerplate author-bio blocks). WordPress handles author bios via
   // user profile fields — they don't belong in post body.
   $('.wsite-multicol-table-wrap, .wsite-multicol-table, .wsite-multicol').remove();
+
+  // Drop Weebly UI-chrome images (PDF icons, etc.) from the body so they don't
+  // render in WP pointing back at the Weebly CDN.
+  $('img').each((_, el) => {
+    const src = $(el).attr('src') || '';
+    if (isPlatformChromeImage(src)) $(el).remove();
+  });
 
   // Unwrap typical Weebly container divs
   const unwrapSelectors = [
@@ -496,6 +516,21 @@ function buildSlug(title, fallbackUrl) {
     .replace(/^-+|-+$/g, '')
     .slice(0, 80);
   return s || 'post';
+}
+
+// For migration, the canonical slug is whatever the source URL's last path
+// segment was — that's the URL customers and search engines have always
+// known, and it sidesteps cases where the crawled title was a generic
+// archive fallback (e.g. "Articles | Blog | Health Blog | ...").
+function slugFromUrl(url) {
+  if (!url) return '';
+  try {
+    const u = new URL(url);
+    const parts = u.pathname.split('/').filter(Boolean);
+    return buildSlug(parts[parts.length - 1] || '', '');
+  } catch (_) {
+    return '';
+  }
 }
 
 // ─── Extract post body from full HTML ────────────────────────────────────────
@@ -693,6 +728,7 @@ module.exports = {
   cleanGodaddyArtifacts,
   normalizePostBody,
   buildSlug,
+  slugFromUrl,
   detectPlatform,
   pickRepresentativeSamples,
   wordCount,

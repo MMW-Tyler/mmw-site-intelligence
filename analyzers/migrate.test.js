@@ -366,6 +366,51 @@ ok('removeImageFromHtml leaves other inline images alone',
 ok('removeImageFromHtml is a no-op when src is null',
    m.removeImageFromHtml(BODY_WITH_FEATURED, null) === BODY_WITH_FEATURED);
 
+// slugFromUrl — slug derives from URL's last path segment (canonical for the
+// post), so generic crawl titles don't collapse multiple posts into one.
+ok('slugFromUrl returns last path segment normalized',
+   m.slugFromUrl('https://www.wellnessminneapolis.com/articles/advanced-cardiac-testing-for-early-detection') ===
+   'advanced-cardiac-testing-for-early-detection');
+ok('slugFromUrl handles trailing slash',
+   m.slugFromUrl('https://x.com/articles/post-name/') === 'post-name');
+ok('slugFromUrl returns "" for invalid URL',
+   m.slugFromUrl('not a url') === '' && m.slugFromUrl('') === '');
+ok('slugFromUrl handles uppercase and ignores query',
+   m.slugFromUrl('https://x.com/Blog/Post-Name?foo=bar') === 'post-name');
+
+// Two posts with the same generic crawl title but different URLs get unique slugs
+const ambiguousTitlePages = [
+  { url: 'https://x.com/articles/advanced-cardiac-testing-for-early-detection',
+    status_code: 200, indexability: 'Indexable', h1: '',
+    title: 'Articles | Blog | Health Blog | Wellness Blog | Nutrition Articles',
+    word_count: 1048, extracted_body: '', extracted_text: '' },
+  { url: 'https://x.com/articles/back-to-school-tips-for-success-this-year',
+    status_code: 200, indexability: 'Indexable', h1: '',
+    title: 'Articles | Blog | Health Blog | Wellness Blog | Nutrition Articles',
+    word_count: 1430, extracted_body: '', extracted_text: '' },
+];
+const ambig = m.detectBlogPosts(ambiguousTitlePages, { minWordCount: 100 });
+const slugs = ambig.map(p => p.slug);
+ok('detectBlogPosts produces unique slugs from URLs even when titles collide',
+   slugs.length === 2 && new Set(slugs).size === 2,
+   JSON.stringify(slugs));
+ok('detectBlogPosts slug is the URL last segment, not the generic title',
+   slugs.includes('advanced-cardiac-testing-for-early-detection') &&
+   slugs.includes('back-to-school-tips-for-success-this-year'));
+
+// Platform-chrome images (Weebly's PDF icon, etc.) — skipped from extraction
+// AND stripped from the body
+const BODY_WITH_PDF_ICON = `
+<p>Read the report: <a href="/uploads/report.pdf"><img src="https://www.weebly.com/weebly/images/file_icons/pdf.png" alt="pdf"></a></p>
+<p>Hero: <img src="/uploads/photo.jpg" alt="real"></p>`;
+const realImgs = m.extractInlineImages(BODY_WITH_PDF_ICON);
+ok('extractInlineImages skips Weebly file_icons chrome',
+   realImgs.length === 1 && realImgs[0].original_url.endsWith('photo.jpg'));
+const cleanedIcons = m.cleanWeeblyArtifacts(BODY_WITH_PDF_ICON);
+ok('cleanWeeblyArtifacts removes Weebly UI-chrome <img>',
+   !cleanedIcons.toLowerCase().includes('weebly.com/weebly/images') &&
+   cleanedIcons.includes('photo.jpg'));
+
 // ─── Summary ─────────────────────────────────────────────────────────────────
 
 console.log('');

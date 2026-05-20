@@ -1900,7 +1900,11 @@ app.post('/api/migrate/:crawlId/push', async (req, res) => {
         const finalTitle  = post.title    || htmlMeta.title || htmlMeta.h1 || '(untitled)';
         const finalDate   = post.pub_date || htmlMeta.pub_date;
         const finalAuthor = post.author   || htmlMeta.author;
-        const finalSlug   = post.slug     || migrate.buildSlug(finalTitle, post.url);
+        // Slug: prefer the source URL's last path segment (canonical for the
+        // post, and immune to generic-fallback titles like "Articles | Blog | ...")
+        const finalSlug   = migrate.slugFromUrl(post.url) ||
+                             post.slug ||
+                             migrate.buildSlug(finalTitle, post.url);
 
         // Check for slug collision in destination
         await gate();
