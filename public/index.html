@@ -1775,17 +1775,25 @@
           </div>
         </div>
 
-        <div style="display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:end;margin-top:16px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end;margin-top:16px;">
           <div>
             <label class="voice-label">RSS feed URL</label>
             <input type="text" id="mig-rss-url" placeholder="https://example.com/feed (leave blank for auto-detect)"
                    style="width:100%;padding:9px 12px;font-size:13px;font-family:Barlow,sans-serif;color:var(--dark);background:var(--white);border:1px solid var(--border-strong);border-radius:8px;">
-            <div class="voice-hint" id="mig-rss-status">&nbsp;</div>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+              <div class="voice-hint" id="mig-rss-status" style="flex:1;">&nbsp;</div>
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);font-family:Barlow,sans-serif;">
+                <input type="checkbox" id="mig-skip-rss" style="accent-color:var(--green);"> Skip RSS
+              </label>
+            </div>
           </div>
-          <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);font-family:Barlow,sans-serif;padding-bottom:24px;">
-            <input type="checkbox" id="mig-skip-rss" style="accent-color:var(--green);"> Skip RSS
-          </label>
-          <button class="primary" id="mig-discover-btn" onclick="runMigrateDiscover()" style="padding-bottom:auto;margin-bottom:24px;">Run discovery</button>
+          <div>
+            <label class="voice-label">URL patterns to include</label>
+            <input type="text" id="mig-url-patterns" placeholder="/articles/, /blog/, /posts/, /news/ (defaults if blank)"
+                   style="width:100%;padding:9px 12px;font-size:13px;font-family:Barlow,sans-serif;color:var(--dark);background:var(--white);border:1px solid var(--border-strong);border-radius:8px;">
+            <div class="voice-hint">Comma-separated path fragments. Custom patterns replace the defaults.</div>
+          </div>
+          <button class="primary" id="mig-discover-btn" onclick="runMigrateDiscover()" style="margin-bottom:24px;">Run discovery</button>
         </div>
 
         <div id="mig-discover-results" class="hidden" style="margin-top:16px;">
@@ -4886,11 +4894,13 @@
     if (!migrateState.crawlId) return;
     const btn = document.getElementById('mig-discover-btn');
     btn.disabled = true; btn.textContent = 'Discovering…';
-    const rssInput = document.getElementById('mig-rss-url').value.trim();
-    const skipRss  = document.getElementById('mig-skip-rss').checked;
+    const rssInput     = document.getElementById('mig-rss-url').value.trim();
+    const skipRss      = document.getElementById('mig-skip-rss').checked;
+    const urlPatterns  = (document.getElementById('mig-url-patterns').value || '').trim();
     const qp = new URLSearchParams();
     if (skipRss) qp.set('rssUrl', 'none');
     else if (rssInput) qp.set('rssUrl', rssInput);
+    if (urlPatterns) qp.set('urlPatterns', urlPatterns);
     const url = `/api/migrate/${migrateState.crawlId}/discover${qp.toString() ? '?' + qp.toString() : ''}`;
     try {
       const res = await apiFetch(url);
