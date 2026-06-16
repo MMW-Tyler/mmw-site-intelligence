@@ -171,6 +171,34 @@ function detectBlogPosts(pages, options) {
   return candidates;
 }
 
+// ─── Pages → candidates (no filtering) ───────────────────────────────────────
+// Converts crawl_pages rows into the candidate shape that sample-test, push
+// and pickRepresentativeSamples expect. Skips the URL-pattern filter that
+// detectBlogPosts applies — by the time we use this, the user has already
+// hand-picked the URLs and detection has done its job.
+
+function pagesAsCandidates(pages) {
+  return (pages || []).map(p => {
+    const wc = p.word_count || wordCount(p.extracted_text || '');
+    const images = (p.extracted_body || '').trim() ? extractInlineImages(p.extracted_body) : [];
+    return {
+      url:              p.url,
+      title:            (p.title || p.h1 || '').trim(),
+      h1:               (p.h1 || '').trim(),
+      word_count:       wc,
+      image_count:      images.length,
+      pub_date:         null,
+      author:           null,
+      category:         null,
+      slug:             slugFromUrl(p.url) || buildSlug(p.title || p.h1 || '', p.url),
+      rss_enriched:     false,
+      default_checked:  true,
+      _extracted_body:  p.extracted_body || '',
+      _score:           0,
+    };
+  });
+}
+
 // ─── RSS parsing ──────────────────────────────────────────────────────────────
 
 function parseRssFeed(xmlString) {
@@ -717,6 +745,7 @@ function pickRepresentativeSamples(candidates) {
 
 module.exports = {
   detectBlogPosts,
+  pagesAsCandidates,
   parseRssFeed,
   mergeRssWithPages,
   extractInlineImages,

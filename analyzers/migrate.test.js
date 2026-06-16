@@ -411,6 +411,26 @@ ok('cleanWeeblyArtifacts removes Weebly UI-chrome <img>',
    !cleanedIcons.toLowerCase().includes('weebly.com/weebly/images') &&
    cleanedIcons.includes('photo.jpg'));
 
+// pagesAsCandidates — converts crawl rows without URL-pattern filtering, so
+// sample-test / push respect the user's custom selection (e.g. /drbarrettblog/)
+const nonStandardPages = [
+  { url: 'https://x.com/drbarrettblog/post-a', status_code: 200, indexability: 'Indexable',
+    title: 'Post A', h1: 'Post A', word_count: 600, extracted_body: '', extracted_text: 'words' },
+  { url: 'https://x.com/drbarrettblog/post-b', status_code: 200, indexability: 'Indexable',
+    title: 'Post B', h1: 'Post B', word_count: 700, extracted_body: '', extracted_text: 'words' },
+];
+const cands = m.pagesAsCandidates(nonStandardPages);
+ok('pagesAsCandidates keeps non-standard URLs that detectBlogPosts would drop',
+   cands.length === 2);
+ok('pagesAsCandidates produces sample-pick-compatible objects',
+   cands[0].slug === 'post-a' && cands[1].slug === 'post-b' && cands[0].word_count === 600);
+
+// Sanity: detectBlogPosts (defaults) DROPS these same URLs, confirming the
+// reason we needed pagesAsCandidates in the first place
+const droppedByDefaults = m.detectBlogPosts(nonStandardPages, { minWordCount: 1 });
+ok('detectBlogPosts with default patterns drops non-standard URLs (the bug pagesAsCandidates works around)',
+   droppedByDefaults.length === 0);
+
 // ─── Summary ─────────────────────────────────────────────────────────────────
 
 console.log('');

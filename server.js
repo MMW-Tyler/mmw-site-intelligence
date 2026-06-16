@@ -1670,7 +1670,10 @@ app.post('/api/migrate/:crawlId/sample-test', async (req, res) => {
       return res.status(400).json({ error: 'No matching pages found for the provided URLs' });
     }
 
-    const candidates = migrate.detectBlogPosts(selected, { minWordCount: 1 });
+    // Trust the user's selection — detection has already run in step 1, and
+    // re-running it here would re-apply the default URL-pattern filter which
+    // wouldn't match custom patterns (e.g. /drbarrettblog/).
+    const candidates = migrate.pagesAsCandidates(selected);
     const samplePicks = migrate.pickRepresentativeSamples(candidates);
 
     // RSS enrichment so metadata is populated
@@ -1870,7 +1873,9 @@ app.post('/api/migrate/:crawlId/push', async (req, res) => {
       return res.end();
     }
 
-    const candidates = migrate.detectBlogPosts(selected, { minWordCount: 1 });
+    // Trust the user's selection — detection ran in step 1; re-running it
+    // here would re-apply the default URL-pattern filter.
+    const candidates = migrate.pagesAsCandidates(selected);
 
     // Re-enrich with RSS to get dates/authors/categories
     const rssFound = await tryFetchRss(crawl.target_url).catch(() => ({ xml: null }));
