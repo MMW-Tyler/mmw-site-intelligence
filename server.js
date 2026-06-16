@@ -1806,9 +1806,10 @@ app.post('/api/migrate/:crawlId/connection-test', async (req, res) => {
 app.post('/api/migrate/:crawlId/push', async (req, res) => {
   const {
     urls,
-    migrate_images = true,
-    post_status    = 'draft',
-    category_map   = {},
+    migrate_images      = true,
+    post_status         = 'draft',
+    category_map        = {},
+    additional_category = null,
   } = req.body || {};
 
   if (!Array.isArray(urls) || urls.length === 0) {
@@ -1870,6 +1871,20 @@ app.post('/api/migrate/:crawlId/push', async (req, res) => {
     const termCache  = wpMigrate.makeTermCache();
     const gate       = wpMigrate.rateLimiter(700);
     const mediaCache = new Map(); // sourceUrl → destUrl  (for duplicate uploads in same run)
+
+    // Resolve the run-wide "additional category" once. Every post will be
+    // tagged with this category id in addition to whatever RSS provides.
+    let additionalCategoryId = null;
+    if (additional_category && String(additional_category).trim()) {
+      const name = String(additional_category).trim();
+      try {
+        await gate();
+        additionalCategoryId = await wpMigrate.ensureCategory(client.wp_url, auth, name, termCache);
+        emit('log', { message: `Tagging every post with category "${name}" (id ${additionalCategoryId}).` });
+      } catch (e) {
+        emit('log', { message: `Warning: could not ensure category "${name}": ${e.message}. Continuing without it.` });
+      }
+    }
 
     let created = 0, failed = 0, skipped = 0;
 
@@ -1979,8 +1994,9 @@ app.post('/api/migrate/:crawlId/push', async (req, res) => {
         }
 
         const categoryIds = [];
+        if (additionalCategoryId) categoryIds.push(additionalCategoryId);
         for (const name of categoryNames) {
-          try { await gate(); const id = await wpMigrate.ensureCategory(client.wp_url, auth, name, termCache); if (id) categoryIds.push(id); }
+          try { await gate(); const id = await wpMigrate.ensureCategory(client.wp_url, auth, name, termCache); if (id && !categoryIds.includes(id)) categoryIds.push(id); }
           catch (_) { /* non-fatal */ }
         }
         const tagIds = [];

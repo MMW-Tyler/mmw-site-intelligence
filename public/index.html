@@ -1900,6 +1900,13 @@
           </div>
         </div>
 
+        <div style="margin-top:14px;">
+          <label class="voice-label">Additional category (optional)</label>
+          <input type="text" id="mig-opt-additional-category" placeholder="e.g. Dr. Barrett's Blog"
+                 style="width:100%;padding:9px 12px;font-size:13px;font-family:Barlow,sans-serif;color:var(--dark);background:var(--white);border:1px solid var(--border-strong);border-radius:8px;">
+          <div class="voice-hint">Created in WP if it doesn't exist. Tagged on every post in this run, in addition to any category derived from RSS.</div>
+        </div>
+
         <div style="margin-top:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
           <button class="primary" id="mig-push-btn" onclick="runMigratePush()" disabled>Start migration</button>
           <button class="danger hidden" id="mig-push-cancel-btn" onclick="cancelMigratePush()">Cancel</button>
@@ -5251,13 +5258,15 @@
   async function runMigratePush() {
     const urls = Array.from(migrateState.selected);
     if (urls.length === 0) return;
-    const migrateImages = document.getElementById('mig-opt-images').checked;
-    const postStatus    = document.getElementById('mig-opt-status').value;
+    const migrateImages      = document.getElementById('mig-opt-images').checked;
+    const postStatus         = document.getElementById('mig-opt-status').value;
+    const additionalCategory = (document.getElementById('mig-opt-additional-category').value || '').trim();
 
     const confirmMsg =
       `Migrate ${urls.length} post${urls.length === 1 ? '' : 's'} to ${migrateState.wpUrl}?\n\n` +
       `Status: ${postStatus === 'publish' ? 'PUBLISHED' : 'Draft'}\n` +
-      `Images: ${migrateImages ? 'will be re-uploaded' : 'will stay on source domain'}`;
+      `Images: ${migrateImages ? 'will be re-uploaded' : 'will stay on source domain'}` +
+      (additionalCategory ? `\nCategory: "${additionalCategory}"` : '');
     if (!confirm(confirmMsg)) return;
 
     const btn       = document.getElementById('mig-push-btn');
@@ -5289,7 +5298,12 @@
       const res = await apiFetch(`/api/migrate/${migrateState.crawlId}/push`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ urls, migrate_images: migrateImages, post_status: postStatus }),
+        body: JSON.stringify({
+          urls,
+          migrate_images:      migrateImages,
+          post_status:         postStatus,
+          additional_category: additionalCategory || null,
+        }),
         signal: ac.signal,
       });
       if (!res.ok) {
