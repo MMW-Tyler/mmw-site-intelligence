@@ -5121,6 +5121,22 @@
       renderMigrateSamples();
       document.getElementById('mig-sample-results').classList.remove('hidden');
       updateSampleBanner();
+      // If anything failed to fetch, surface the per-URL errors inline
+      if (Array.isArray(data.errors) && data.errors.length > 0) {
+        const list = document.getElementById('mig-samples-list');
+        const errBlock = document.createElement('div');
+        errBlock.className = 'mig-banner err';
+        errBlock.style.marginBottom = '12px';
+        errBlock.innerHTML = '<strong>Failed to fetch ' + data.errors.length + ' source page' +
+          (data.errors.length === 1 ? '' : 's') + ':</strong><br>' +
+          data.errors.map(e => '• <code>' + escapeHTML(e.url) + '</code> &mdash; ' + escapeHTML(e.error)).join('<br>');
+        list.prepend(errBlock);
+      }
+      if (data.all_failed) {
+        const banner = document.getElementById('mig-sample-banner');
+        banner.textContent = 'Could not fetch any of the 3 sample pages. See errors above.';
+        banner.className   = 'mig-banner err';
+      }
       refreshMigrateGates();
     } catch (e) {
       alert('Sample test failed: ' + e.message);

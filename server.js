@@ -1531,14 +1531,24 @@ const RSS_AUTOFIND_PATHS = ['/feed', '/1/feed', '/blog?format=rss', '/rss', '/bl
 // the crawl's extracted_body is a text-compressed prose digest, unsuitable
 // for migration which needs faithful post HTML. So sample-test and push
 // fetch the live source page and run extraction against it.
+//
+// Browser-like UA + Accept headers — some hosts (Weebly in particular) will
+// 403 or return blank pages to obviously-bot user agents on parts of the site.
+const SOURCE_FETCH_HEADERS = {
+  'User-Agent':      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+  'Accept':          'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9',
+};
 async function fetchSourcePage(url) {
   const res = await fetch(url, {
-    headers: { 'User-Agent': 'MMW-Site-Intelligence/1.0 (blog-migration)' },
+    headers:  SOURCE_FETCH_HEADERS,
     redirect: 'follow',
     signal:   AbortSignal.timeout(45_000),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`);
-  return await res.text();
+  const html = await res.text();
+  if (!html || html.length < 200) throw new Error(`empty body (${html.length} chars) from ${url}`);
+  return html;
 }
 
 async function tryFetchRss(siteUrl) {
@@ -1708,7 +1718,10 @@ app.post('/api/migrate/:crawlId/sample-test', async (req, res) => {
 
     if (out.length === 0) {
       migrateSession(crawl.id).sampleOk = false;
-      return res.status(502).json({ error: 'Failed to fetch any sample pages', errors });
+      // Return 200 with the per-URL errors so the UI can surface them inline
+      // (a 4xx/5xx status would be eaten by the alert() catch in the UI and
+      // hide the actual fetch reasons).
+      return res.json({ samples: [], platform, errors, all_failed: true });
     }
 
     migrateSession(crawl.id).sampleOk = true;
