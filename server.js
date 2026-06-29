@@ -386,6 +386,32 @@ app.get('/api/audit/:id.csv', async (req, res) => {
   }
 });
 
+// Plain one-URL-per-line list of every crawled URL. Handy for pasting into
+// other tools (Screaming Frog, GSC, spreadsheets) without the audit columns.
+app.get('/api/crawl/:id/urls.csv', async (req, res) => {
+  try {
+    const crawl = await resolveCrawl(req.params.id);
+    if (!crawl) return res.status(404).send('Crawl not found');
+    const pages = await store.getCrawlPages(crawl.id);
+    const urls = pages
+      .map(p => p.url)
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+    const body = ['URL', ...urls].join('\n');
+
+    const domain = (crawl.clients && crawl.clients.domain) || 'site';
+    const date = (crawl.finished_at || new Date().toISOString()).split('T')[0];
+    const filename = `urls-${domain}-${date}.csv`;
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(body);
+  } catch (err) {
+    console.error('[urls csv] error:', err);
+    res.status(500).send('Error: ' + err.message);
+  }
+});
+
 app.get('/api/audit/:id', async (req, res) => {
   try {
     const crawl = await resolveCrawl(req.params.id);

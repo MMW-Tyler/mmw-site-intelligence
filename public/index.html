@@ -185,6 +185,21 @@
     margin-bottom: 20px;
   }
 
+  /* ── INTRO / ORIENTATION BANNER ── */
+  .intro-banner { position: relative; background: var(--green-lighter); border: 1px solid var(--green); }
+  .intro-dismiss {
+    position: absolute; top: 10px; right: 12px;
+    background: none; border: none; cursor: pointer;
+    font-size: 20px; line-height: 1; color: var(--text-muted); padding: 2px 6px;
+  }
+  .intro-dismiss:hover { color: var(--dark); }
+  .intro-title { font-family: 'Poppins', sans-serif; font-weight: 600; font-size: 15px; color: var(--dark); margin-bottom: 6px; }
+  .intro-body { font-family: 'Barlow', sans-serif; font-size: 13px; line-height: 1.55; color: var(--dark); margin-bottom: 12px; }
+  .intro-flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .intro-step { background: var(--white); border: 1px solid var(--green); border-radius: 6px; padding: 5px 10px; font-family: 'Barlow', sans-serif; font-size: 12px; color: var(--dark); }
+  .intro-arrow { color: var(--green); font-weight: 700; }
+  .intro-tip { font-family: 'Barlow', sans-serif; font-size: 12px; line-height: 1.5; color: var(--text-secondary); border-top: 1px solid var(--green); padding-top: 10px; }
+
   /* ── FORM ── */
   .form-grid {
     display: grid;
@@ -815,14 +830,31 @@
   </div>
 
   <div class="tabs" role="tablist">
-    <button class="tab" data-tab="clients"  onclick="switchTab('clients', this)">Clients</button>
-    <button class="tab active" data-tab="crawl" onclick="switchTab('crawl', this)">Crawl</button>
-    <button class="tab" data-tab="audit"  onclick="switchTab('audit', this)">Audit</button>
-    <button class="tab" data-tab="scout"  onclick="switchTab('scout', this)">Scout</button>
-    <button class="tab" data-tab="voice"    onclick="switchTab('voice', this)">Brand Voice</button>
-    <button class="tab" data-tab="optimize" onclick="switchTab('optimize', this)">Optimize</button>
-    <button class="tab" data-tab="sitemap" onclick="switchTab('sitemap', this)">Sitemap</button>
-    <button class="tab" data-tab="migrate" onclick="switchTab('migrate', this)">Migrate</button>
+    <button class="tab" data-tab="clients"  onclick="switchTab('clients', this)" title="Saved clients and their crawl history">Clients</button>
+    <button class="tab active" data-tab="crawl" onclick="switchTab('crawl', this)" title="Start here: crawl a site to capture its pages and content">Crawl</button>
+    <button class="tab" data-tab="audit"  onclick="switchTab('audit', this)" title="Technical SEO review of the crawled pages (titles, meta, thin content, indexability)">Audit</button>
+    <button class="tab" data-tab="scout"  onclick="switchTab('scout', this)" title="Pick pages and analyze their content opportunities">Scout</button>
+    <button class="tab" data-tab="voice"    onclick="switchTab('voice', this)" title="Derive the site's brand voice from crawled copy">Brand Voice</button>
+    <button class="tab" data-tab="optimize" onclick="switchTab('optimize', this)" title="Generate optimized content from the crawl">Optimize</button>
+    <button class="tab" data-tab="sitemap" onclick="switchTab('sitemap', this)" title="Sitemap optimizer: cross-reference a sitemap with GSC data and propose a new one">Sitemap</button>
+    <button class="tab" data-tab="migrate" onclick="switchTab('migrate', this)" title="Migrate content into WordPress">Migrate</button>
+  </div>
+
+  <!-- Dismissible orientation banner: explains the crawl-first workflow. -->
+  <div class="card intro-banner" id="intro-banner" style="display:none;">
+    <button class="intro-dismiss" onclick="dismissIntro()" title="Dismiss" aria-label="Dismiss">&times;</button>
+    <div class="intro-title">How this tool works</div>
+    <div class="intro-body">
+      Everything starts with a <strong>Crawl</strong>. One crawl captures every page plus its content, then the other tabs read from it. No tab re-crawls the site.
+    </div>
+    <div class="intro-flow">
+      <span class="intro-step"><strong>1. Crawl</strong> a site</span>
+      <span class="intro-arrow">→</span>
+      <span class="intro-step"><strong>2. Audit / Scout / Brand Voice</strong> analyze it</span>
+      <span class="intro-arrow">→</span>
+      <span class="intro-step"><strong>3. Optimize / Migrate</strong> act on it</span>
+    </div>
+    <div class="intro-tip">Crawling a site with a <strong>noindex</strong> tag or a blocked homepage? Paste its sitemap URL into the Sitemap URL field on the Crawl tab.</div>
   </div>
 
   <!-- ─── CLIENTS TAB ────────────────────────────────────────────────────── -->
@@ -1056,7 +1088,8 @@
       <div class="btn-row">
         <button class="primary" onclick="goToCrawlResult('audit')">Go to Audit →</button>
         <button class="secondary" onclick="goToCrawlResult('optimize')">Go to Optimize →</button>
-        <button class="secondary" onclick="downloadUrlsCsv(activeCrawlId)">Download URLs CSV</button>
+        <button class="secondary" onclick="downloadUrlsCsv(activeCrawlId)">Download audit CSV</button>
+        <button class="secondary" onclick="downloadUrlList(activeCrawlId)">Download URL list</button>
         <button class="secondary" onclick="resetCrawl()">Run another crawl</button>
       </div>
     </div>
@@ -1087,7 +1120,8 @@
           </div>
           <div class="audit-actions">
             <select class="crawl-select" id="audit-crawl-select" onchange="loadAudit(this.value)"></select>
-            <button class="secondary" onclick="downloadCSV()">Download CSV</button>
+            <button class="secondary" onclick="downloadCSV()">Download audit CSV</button>
+            <button class="secondary" onclick="downloadUrlList(auditState.crawlId)">Download URL list</button>
           </div>
         </div>
       </div>
@@ -2498,7 +2532,23 @@
   }
 
   // Sort header click handlers
+  // ─── Orientation banner ───────────────────────────────────────────────
+  function dismissIntro() {
+    try { localStorage.setItem('mmw_intro_dismissed', '1'); } catch (_) {}
+    const el = document.getElementById('intro-banner');
+    if (el) el.style.display = 'none';
+  }
+
+  function maybeShowIntro() {
+    let dismissed = false;
+    try { dismissed = localStorage.getItem('mmw_intro_dismissed') === '1'; } catch (_) {}
+    const el = document.getElementById('intro-banner');
+    if (el && !dismissed) el.style.display = 'block';
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
+    maybeShowIntro();
+
     // Restore crawl form values from localStorage
     try {
       const saved = JSON.parse(localStorage.getItem('crawl_form') || '{}');
@@ -2538,18 +2588,17 @@
     downloadUrlsCsv(auditState.crawlId);
   }
 
-  // Download the full per-URL CSV for a crawl. Uses apiFetch so the Bearer
-  // token is sent (a plain window.location navigation would 401 when
-  // MMW_INTERNAL_TOKEN is enabled), then triggers a client-side blob download.
-  async function downloadUrlsCsv(crawlId) {
-    if (!crawlId) { alert('No crawl selected to export.'); return; }
+  // Generic authenticated download. Uses apiFetch so the Bearer token is sent
+  // (a plain window.location navigation would 401 when MMW_INTERNAL_TOKEN is
+  // enabled), reads the server's filename, and triggers a blob download.
+  async function downloadViaApi(path, fallbackName) {
     try {
-      const res = await apiFetch('/api/audit/' + crawlId + '.csv');
-      if (!res.ok) { alert('CSV export failed (HTTP ' + res.status + ')'); return; }
+      const res = await apiFetch(path);
+      if (!res.ok) { alert('Download failed (HTTP ' + res.status + ')'); return; }
       const blob  = await res.blob();
       const dispo = res.headers.get('Content-Disposition') || '';
       const match = dispo.match(/filename="([^"]+)"/);
-      const name  = match ? match[1] : 'crawl-' + crawlId + '.csv';
+      const name  = match ? match[1] : fallbackName;
       const link  = document.createElement('a');
       const objUrl = URL.createObjectURL(blob);
       link.href = objUrl;
@@ -2559,8 +2608,20 @@
       document.body.removeChild(link);
       URL.revokeObjectURL(objUrl);
     } catch (e) {
-      alert('CSV export failed: ' + e.message);
+      alert('Download failed: ' + e.message);
     }
+  }
+
+  // Full per-URL audit CSV (URL, status, title, meta, word count, flags…).
+  function downloadUrlsCsv(crawlId) {
+    if (!crawlId) { alert('No crawl selected to export.'); return; }
+    downloadViaApi('/api/audit/' + crawlId + '.csv', 'audit-' + crawlId + '.csv');
+  }
+
+  // Plain one-URL-per-line list of every crawled URL.
+  function downloadUrlList(crawlId) {
+    if (!crawlId) { alert('No crawl selected to export.'); return; }
+    downloadViaApi('/api/crawl/' + crawlId + '/urls.csv', 'urls-' + crawlId + '.csv');
   }
 
   // ═══════════════════════════════════════════════════════════════════════
