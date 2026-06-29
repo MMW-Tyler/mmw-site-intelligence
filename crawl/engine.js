@@ -34,6 +34,21 @@ const { extractContent } = require('./extractor');
 const FETCH_TIMEOUT_MS = 20000;
 const FETCH_RETRIES    = 2;   // retries on connection-level failures (not HTTP errors)
 
+// TLS error codes that indicate a misconfigured cert chain on the target site
+// (most often a missing intermediate certificate) rather than a real security
+// problem. Browsers work around these via AIA fetching; Node does not, so it
+// hard-fails the connection. For a content crawler reading public pages we fall
+// back to fetching without verification when we hit one of these.
+const TLS_CERT_CODES = new Set([
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+  'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+  'UNABLE_TO_GET_ISSUER_CERT',
+  'SELF_SIGNED_CERT_IN_CHAIN',
+  'DEPTH_ZERO_SELF_SIGNED_CERT',
+  'CERT_HAS_EXPIRED',
+  'ERR_TLS_CERT_ALTNAME_INVALID',
+]);
+
 const SKIP_EXT = new Set([
   '.pdf','.jpg','.jpeg','.png','.gif','.webp','.svg','.ico',
   '.mp4','.mp3','.mov','.zip','.gz','.tar',
@@ -72,6 +87,7 @@ async function crawl(opts, emit, persistPage) {
   let crawledCount = 0;
   let activeCount  = 0;
   let sitemapSeeds = 0;
+  let tlsInsecure  = false; // flips on once we detect a misconfigured cert chain
 
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -249,6 +265,14 @@ async function crawl(opts, emit, persistPage) {
         timeout: FETCH_TIMEOUT_MS,
       };
 
+      // Once a misconfigured cert chain is detected on this site, fetch without
+      // verification. agent:false forces a fresh connection so the per-request
+      // TLS option is honored rather than a cached agent's.
+      if (tlsInsecure && p.protocol === 'https:') {
+        reqOpts.rejectUnauthorized = false;
+        reqOpts.agent = false;
+      }
+
       const req = lib.request(reqOpts, (res) => {
         const status = res.statusCode;
         if ([301,302,303,307,308].includes(status) && res.headers.location) {
@@ -281,10 +305,10 @@ async function crawl(opts, emit, persistPage) {
           }
           resolve({ url: pageURL, statusCode: status, body: buf.toString('utf8'), contentType: ct });
         });
-        res.on('error', e => resolve({ url: pageURL, statusCode: 0, error: e.message }));
+        res.on('error', e => resolve({ url: pageURL, statusCode: 0, error: e.message, errorCode: e.code }));
       });
       req.on('timeout', () => { req.destroy(); resolve({ url: pageURL, statusCode: 0, error: 'Timeout' }); });
-      req.on('error', e => resolve({ url: pageURL, statusCode: 0, error: e.message }));
+      req.on('error', e => resolve({ url: pageURL, statusCode: 0, error: e.message, errorCode: e.code }));
       req.end();
     });
   }
@@ -296,6 +320,16 @@ async function crawl(opts, emit, persistPage) {
     let res;
     for (let attempt = 0; attempt <= FETCH_RETRIES; attempt++) {
       res = await attemptFetch(pageURL, hops);
+
+      // Misconfigured TLS chain: flip the whole crawl to unverified fetching
+      // (logged once) and retry this URL immediately so we don't burn an
+      // attempt and a warning on every page of the site.
+      if (!tlsInsecure && res.statusCode === 0 && TLS_CERT_CODES.has(res.errorCode)) {
+        tlsInsecure = true;
+        emit('log', { message: `TLS certificate could not be verified (${res.errorCode}). The site's certificate chain is likely misconfigured (missing intermediate). Continuing without certificate verification for this crawl.` });
+        res = await attemptFetch(pageURL, hops);
+      }
+
       const retryable = res.statusCode === 0 && res.error && res.error !== 'Bad URL';
       if (!retryable || attempt === FETCH_RETRIES) return res;
       await sleep(600 * (attempt + 1));
