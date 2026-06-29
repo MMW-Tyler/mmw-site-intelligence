@@ -1143,7 +1143,7 @@
       <!-- Stats grid: issues (clickable) -->
       <div class="card">
         <div class="card-title">Issues found</div>
-        <div class="card-sub">Each tile filters the inventory table below to those pages.</div>
+        <div class="card-sub">Click a tile to filter the inventory below to those pages. Hover any tile for a plain-language explanation of what it means.</div>
         <div class="stats-grid" id="issue-tiles">
           <!-- Populated by renderIssueTiles() -->
         </div>
@@ -1231,6 +1231,7 @@
       <!-- Page picker -->
       <div class="card">
         <div class="card-title">Page picker</div>
+        <div class="field-hint" style="margin-bottom:10px;">Pick the pages worth analyzing, then Generate bundles their content into a Markdown export for content review. "Select defaults" picks the content-rich pages for you.</div>
         <div class="card-sub" id="scout-card-sub">Select which pages to include in the Markdown export.</div>
 
         <div class="filter-row" style="justify-content:space-between;gap:12px;">
@@ -2262,6 +2263,27 @@
     'noindex':         { label: 'Noindex', tone: 'warn'  },
   };
 
+  // Plain-language explanation of each issue flag. Used as hover tooltips on
+  // both the issue tiles and the table badges so the meaning is obvious without
+  // needing SEO background.
+  const ISSUE_EXPLAIN = {
+    'thin':            'Fewer than 300 words. Thin pages rarely rank and may look low-value to Google.',
+    'title_missing':   'No <title> tag. The title is the clickable headline in search results.',
+    'title_short':     'Title under 30 characters. Usually leaves ranking keywords and click appeal on the table.',
+    'title_long':      'Title over 60 characters. Google truncates it in search results.',
+    'meta_missing':    'No meta description. Google writes its own snippet, often less compelling than yours.',
+    'meta_short':      'Meta description under 80 characters. Too brief to sell the click.',
+    'meta_long':       'Meta description over 160 characters. The end gets cut off in results.',
+    'h1_missing':      'No H1 heading. The H1 signals the page topic to readers and search engines.',
+    'no_cta':          'No clear call to action (book, call, contact, etc.) detected in the copy.',
+    'canonical_other': 'Canonical tag points to a different URL, so this page may not be the one indexed.',
+    'cannibal':        'Multiple pages target the same topic and compete with each other in search.',
+    'http_error':      'Server returned a 4xx/5xx error. The page is broken or missing.',
+    'fetch_failed':    'The page could not be fetched at all (timeout, DNS, or connection error).',
+    'redirect':        'This URL redirects elsewhere. It is recorded so you can audit redirect chains.',
+    'noindex':         'Marked noindex, so search engines are told not to index it.',
+  };
+
   let auditState = {
     initialized: false,
     crawlId:     null,
@@ -2372,6 +2394,8 @@
       div.dataset.count = count;
       div.dataset.flag  = tile.flag;
       if (auditState.filterFlag === tile.flag) div.classList.add('active');
+      const explain = ISSUE_EXPLAIN[tile.flag] || '';
+      if (explain) div.title = explain;
       const valueClass = count === 0 ? '' : tile.tone;
       div.innerHTML = `
         <div class="stat-label">${escapeHTML(tile.label)}</div>
@@ -2510,7 +2534,8 @@
         const def = ISSUE_BADGE_LABELS[f];
         if (!def) return '';
         const cls = def.tone ? `badge ${def.tone}` : 'badge';
-        return `<span class="${cls}">${escapeHTML(def.label)}</span>`;
+        const tip = ISSUE_EXPLAIN[f] || def.label;
+        return `<span class="${cls}" title="${escapeHTML(tip)}">${escapeHTML(def.label)}</span>`;
       })
       .join('');
 
