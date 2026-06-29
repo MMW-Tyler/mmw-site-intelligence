@@ -31,8 +31,10 @@ const path  = require('path');
 const zlib  = require('zlib');
 const { extractContent } = require('./extractor');
 
-const FETCH_TIMEOUT_MS = 20000;
-const FETCH_RETRIES    = 2;   // retries on connection-level failures (not HTTP errors)
+const FETCH_TIMEOUT_MS  = 20000;
+const FETCH_RETRIES     = 2;    // retries on connection-level failures (not HTTP errors)
+const RATE_LIMIT_RETRIES = 5;   // retries on 429/503 before giving up on a URL
+const MAX_THROTTLE_MS    = 6000; // ceiling on the adaptive per-request slowdown
 
 // TLS error codes that indicate a misconfigured cert chain on the target site
 // (most often a missing intermediate certificate) rather than a real security
@@ -88,6 +90,7 @@ async function crawl(opts, emit, persistPage) {
   let activeCount  = 0;
   let sitemapSeeds = 0;
   let tlsInsecure  = false; // flips on once we detect a misconfigured cert chain
+  let throttleMs   = 0;     // adaptive global delay added per request when rate-limited
 
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -283,8 +286,9 @@ async function crawl(opts, emit, persistPage) {
           return;
         }
         const ct = (res.headers['content-type'] || '').toLowerCase();
+        const retryAfter = res.headers['retry-after'];
         if (!ct.includes('text/html') && !ct.includes('xml') && !ct.includes('text/plain')) {
-          res.resume(); resolve({ url: pageURL, statusCode: status, nonHTML: true, contentType: ct }); return;
+          res.resume(); resolve({ url: pageURL, statusCode: status, nonHTML: true, contentType: ct, retryAfter }); return;
         }
         const enc    = (res.headers['content-encoding'] || '').toLowerCase();
         const chunks = [];
@@ -303,7 +307,7 @@ async function crawl(opts, emit, persistPage) {
           } catch (e) {
             resolve({ url: pageURL, statusCode: status, error: 'Decompress failed: ' + e.message }); return;
           }
-          resolve({ url: pageURL, statusCode: status, body: buf.toString('utf8'), contentType: ct });
+          resolve({ url: pageURL, statusCode: status, body: buf.toString('utf8'), contentType: ct, retryAfter });
         });
         res.on('error', e => resolve({ url: pageURL, statusCode: 0, error: e.message, errorCode: e.code }));
       });
@@ -313,26 +317,50 @@ async function crawl(opts, emit, persistPage) {
     });
   }
 
-  // Fetch with retries on connection-level failures. HTTP responses (incl. 4xx
-  // and 5xx) are returned as-is and never retried — only socket resets, DNS
-  // errors, and timeouts, which WAFs and flaky hosts often throw on first hit.
+  // Fetch with retries. Handles three failure modes:
+  //   1. Misconfigured TLS chain → flip to unverified fetching (logged once).
+  //   2. Rate limiting (429/503) → back off honoring Retry-After, and raise an
+  //      adaptive global throttle so the whole crawl slows down.
+  //   3. Connection-level failure (reset/DNS/timeout) → retry with backoff.
+  // Real HTTP errors (other 4xx/5xx) are returned as-is and never retried.
   async function fetchURL(pageURL, hops) {
     let res;
-    for (let attempt = 0; attempt <= FETCH_RETRIES; attempt++) {
+    let connFails = 0;
+    let rateHits  = 0;
+    for (let attempt = 0; attempt < 12; attempt++) {
+      if (throttleMs) await sleep(throttleMs);
       res = await attemptFetch(pageURL, hops);
 
-      // Misconfigured TLS chain: flip the whole crawl to unverified fetching
-      // (logged once) and retry this URL immediately so we don't burn an
-      // attempt and a warning on every page of the site.
+      // (1) Misconfigured TLS chain — flip the whole crawl to unverified
+      //     fetching, logged once, and retry immediately.
       if (!tlsInsecure && res.statusCode === 0 && TLS_CERT_CODES.has(res.errorCode)) {
         tlsInsecure = true;
         emit('log', { message: `TLS certificate could not be verified (${res.errorCode}). The site's certificate chain is likely misconfigured (missing intermediate). Continuing without certificate verification for this crawl.` });
-        res = await attemptFetch(pageURL, hops);
+        continue;
       }
 
-      const retryable = res.statusCode === 0 && res.error && res.error !== 'Bad URL';
-      if (!retryable || attempt === FETCH_RETRIES) return res;
-      await sleep(600 * (attempt + 1));
+      // (2) Rate limited — slow the crawl globally and back off this URL.
+      if ((res.statusCode === 429 || res.statusCode === 503) && rateHits < RATE_LIMIT_RETRIES) {
+        rateHits++;
+        throttleMs = Math.min(throttleMs + 750, MAX_THROTTLE_MS);
+        const ra    = parseInt(res.retryAfter, 10);
+        const waitS = Number.isFinite(ra) && ra > 0 ? ra : Math.pow(2, rateHits);
+        if (rateHits === 1) {
+          emit('log', { message: `Rate limited (HTTP ${res.statusCode}) on ${pageURL}. Backing off and slowing the crawl (now +${throttleMs}ms/request).` });
+        }
+        await sleep(Math.min(waitS * 1000, 30000));
+        continue;
+      }
+
+      // (3) Connection-level failure — retry with backoff.
+      const connErr = res.statusCode === 0 && res.error && res.error !== 'Bad URL';
+      if (connErr && connFails < FETCH_RETRIES) {
+        connFails++;
+        await sleep(600 * connFails);
+        continue;
+      }
+
+      return res;
     }
     return res;
   }
@@ -520,8 +548,10 @@ async function crawl(opts, emit, persistPage) {
   async function processPage(pageURL) {
     const res = await fetchURL(pageURL);
 
-    // Failed/non-HTML/error
-    if (res.error || res.nonHTML || !res.body) {
+    // Failed / non-HTML / HTTP error. For 4xx/5xx we record the status but do
+    // NOT extract the body — otherwise a "429 Too Many Requests" or WAF error
+    // page would be stored as if it were the page's real content.
+    if (res.error || res.nonHTML || !res.body || res.statusCode >= 400) {
       const page = emptyPage(res.originalURL || pageURL, res.statusCode || 0, '');
       pageBuffer.push(page);
       try { await persistPage(page); } catch (e) { emit('log', { message: `Persist failed: ${e.message}` }); }
