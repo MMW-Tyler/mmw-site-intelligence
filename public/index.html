@@ -194,6 +194,12 @@
   }
   .form-grid.full { grid-template-columns: 1fr; }
   .field { display: flex; flex-direction: column; gap: 6px; }
+  .field-hint {
+    font-size: 11px;
+    line-height: 1.45;
+    color: var(--text-muted);
+    font-family: 'Barlow', sans-serif;
+  }
   .field label {
     font-size: 11px;
     font-weight: 600;
@@ -1000,8 +1006,9 @@
           <input type="number" id="concurrency" value="2" min="1" max="5">
         </div>
         <div class="field">
-          <label for="htmlSitemap">HTML sitemap (optional)</label>
-          <input type="text" id="htmlSitemap" placeholder="https://.../sitemap" autocomplete="off">
+          <label for="htmlSitemap">Sitemap URL (optional)</label>
+          <input type="text" id="htmlSitemap" placeholder="https://.../sitemap.xml or /sitemap" autocomplete="off">
+          <div class="field-hint">XML or HTML. Use this to crawl sites with a noindex tag or where auto-discovery fails. Pages listed in the sitemap are queued directly.</div>
         </div>
       </div>
 
@@ -1049,6 +1056,7 @@
       <div class="btn-row">
         <button class="primary" onclick="goToCrawlResult('audit')">Go to Audit →</button>
         <button class="secondary" onclick="goToCrawlResult('optimize')">Go to Optimize →</button>
+        <button class="secondary" onclick="downloadUrlsCsv(activeCrawlId)">Download URLs CSV</button>
         <button class="secondary" onclick="resetCrawl()">Run another crawl</button>
       </div>
     </div>
@@ -2527,8 +2535,32 @@
   });
 
   function downloadCSV() {
-    if (!auditState.crawlId) return;
-    window.location.href = '/api/audit/' + auditState.crawlId + '.csv';
+    downloadUrlsCsv(auditState.crawlId);
+  }
+
+  // Download the full per-URL CSV for a crawl. Uses apiFetch so the Bearer
+  // token is sent (a plain window.location navigation would 401 when
+  // MMW_INTERNAL_TOKEN is enabled), then triggers a client-side blob download.
+  async function downloadUrlsCsv(crawlId) {
+    if (!crawlId) { alert('No crawl selected to export.'); return; }
+    try {
+      const res = await apiFetch('/api/audit/' + crawlId + '.csv');
+      if (!res.ok) { alert('CSV export failed (HTTP ' + res.status + ')'); return; }
+      const blob  = await res.blob();
+      const dispo = res.headers.get('Content-Disposition') || '';
+      const match = dispo.match(/filename="([^"]+)"/);
+      const name  = match ? match[1] : 'crawl-' + crawlId + '.csv';
+      const link  = document.createElement('a');
+      const objUrl = URL.createObjectURL(blob);
+      link.href = objUrl;
+      link.download = name;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(objUrl);
+    } catch (e) {
+      alert('CSV export failed: ' + e.message);
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════

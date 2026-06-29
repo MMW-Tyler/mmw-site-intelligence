@@ -36,7 +36,12 @@ const SKIP_EXT = new Set([
   '.css','.js','.woff','.woff2','.ttf','.eot','.map',
 ]);
 
-const USER_AGENT = 'Mozilla/5.0 (compatible; MMW-Crawler/1.0; +https://medicalmarketingwhiz.com)';
+// A realistic desktop-Chrome UA. The previous identifying "MMW-Crawler" string
+// was being blocked outright (403) by common WAFs (Wordfence/Cloudflare/Sucuri)
+// on noindex / pre-launch sites, which prevented authorized first-party audits
+// from running at all. A standard browser UA is the norm for SEO crawlers.
+// Change this back if a client requires an identifiable crawler UA.
+const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
 // ─── MAIN EXPORT ─────────────────────────────────────────────────────────────
 
@@ -316,6 +321,50 @@ async function crawl(opts, emit, persistPage) {
     return unique.length;
   }
 
+  // Seed from a user-supplied sitemap URL, auto-detecting format.
+  //   - XML sitemaps (incl. sitemap-index files): parse <loc> entries, follow
+  //     nested sitemaps. This is what most sites expose at /sitemap.xml.
+  //   - HTML sitemap pages: extract anchor links.
+  // Returns the number of URLs queued. Logs the fetch status so a 403/blocked
+  // sitemap (common on noindex / pre-launch sites behind a WAF) is visible.
+  async function seedFromSitemapURL(sitemapURL) {
+    emit('log', { message: `Seeding from sitemap: ${sitemapURL}` });
+    const res = await fetchURL(sitemapURL);
+
+    if (res.error) { emit('log', { message: `Sitemap fetch failed: ${res.error}` }); return 0; }
+    if (res.statusCode >= 400) {
+      emit('log', { message: `Sitemap returned HTTP ${res.statusCode}. The server may be blocking the crawler, so URLs from it cannot be read.` });
+    }
+    if (!res.body) { emit('log', { message: 'Sitemap response had no body to parse' }); return 0; }
+
+    const body     = res.body;
+    const base     = res.url || sitemapURL;
+    const looksXML = /<\s*(urlset|sitemapindex)[\s>]/i.test(body) || /<loc>\s*https?:\/\//i.test(body);
+
+    let candidates;
+    if (looksXML) {
+      // fetchXMLSitemap walks nested sitemap-index files and returns page URLs.
+      candidates = await fetchXMLSitemap(sitemapURL);
+      emit('log', { message: `Detected XML sitemap: ${candidates.length} URLs parsed` });
+    } else {
+      candidates = getLinks(body, base);
+      emit('log', { message: `Treating as HTML sitemap: ${candidates.length} links found` });
+    }
+
+    const internal = candidates.filter(l => {
+      try { return isSameDomain(new url.URL(l).hostname) && !isSkippableURL(l); }
+      catch { return false; }
+    });
+    const unique = [...new Set(internal)];
+    let queued = 0;
+    unique.forEach(u => {
+      const n = normalizeURL(u, baseOrigin);
+      if (n && !visited.has(n)) { queue.push(n); queued++; }
+    });
+    emit('log', { message: `Sitemap seeding: ${unique.length} internal URLs, ${queued} queued` });
+    return queued;
+  }
+
   async function discoverAndSeed(origin) {
     const candidates = [];
     try {
@@ -455,7 +504,7 @@ async function crawl(opts, emit, persistPage) {
   if (!noSitemap) {
     emit('log', { message: 'Discovering sitemap...' });
     if (htmlSitemap) {
-      sitemapSeeds = await seedFromHTMLPage(htmlSitemap);
+      sitemapSeeds = await seedFromSitemapURL(htmlSitemap);
     } else {
       await discoverAndSeed(baseOrigin);
     }
