@@ -28,7 +28,11 @@ const https = require('https');
 const http  = require('http');
 const url   = require('url');
 const path  = require('path');
+const zlib  = require('zlib');
 const { extractContent } = require('./extractor');
+
+const FETCH_TIMEOUT_MS = 20000;
+const FETCH_RETRIES    = 2;   // retries on connection-level failures (not HTTP errors)
 
 const SKIP_EXT = new Set([
   '.pdf','.jpg','.jpeg','.png','.gif','.webp','.svg','.ico',
@@ -211,7 +215,9 @@ async function crawl(opts, emit, persistPage) {
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
 
-  function fetchURL(pageURL, hops) {
+  // One fetch attempt. Returns a result object; statusCode 0 + error means a
+  // connection-level failure (timeout/reset/DNS) that fetchURL may retry.
+  function attemptFetch(pageURL, hops) {
     hops = hops || 0;
     return new Promise((resolve) => {
       if (hops > 6) { resolve({ url: pageURL, statusCode: 310, error: 'Too many redirects' }); return; }
@@ -228,7 +234,9 @@ async function crawl(opts, emit, persistPage) {
           'User-Agent':                USER_AGENT,
           'Accept':                    'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
           'Accept-Language':           'en-US,en;q=0.9',
-          'Accept-Encoding':           'identity',
+          // Advertise compression like a real browser. Requesting "identity" is
+          // a common bot tell that WAFs flag; we decompress the response below.
+          'Accept-Encoding':           'gzip, deflate, br',
           'Cache-Control':             'no-cache',
           'Pragma':                    'no-cache',
           'Sec-Fetch-Dest':            'document',
@@ -238,7 +246,7 @@ async function crawl(opts, emit, persistPage) {
           'Upgrade-Insecure-Requests': '1',
           'Connection':                'close',
         },
-        timeout: 15000,
+        timeout: FETCH_TIMEOUT_MS,
       };
 
       const req = lib.request(reqOpts, (res) => {
@@ -252,23 +260,47 @@ async function crawl(opts, emit, persistPage) {
         }
         const ct = (res.headers['content-type'] || '').toLowerCase();
         if (!ct.includes('text/html') && !ct.includes('xml') && !ct.includes('text/plain')) {
-          res.resume(); resolve({ url: pageURL, statusCode: status, nonHTML: true }); return;
+          res.resume(); resolve({ url: pageURL, statusCode: status, nonHTML: true, contentType: ct }); return;
         }
-        let body = '';
-        res.setEncoding('utf8');
+        const enc    = (res.headers['content-encoding'] || '').toLowerCase();
+        const chunks = [];
+        let size = 0;
         res.on('data', c => {
-          body += c;
-          if (body.length > 5 * 1024 * 1024) {
-            res.destroy();
-          }
+          chunks.push(c);
+          size += c.length;
+          if (size > 8 * 1024 * 1024) res.destroy();
         });
-        res.on('end', () => resolve({ url: pageURL, statusCode: status, body }));
+        res.on('end', () => {
+          let buf = Buffer.concat(chunks);
+          try {
+            if (enc === 'gzip')      buf = zlib.gunzipSync(buf);
+            else if (enc === 'deflate') buf = zlib.inflateSync(buf);
+            else if (enc === 'br')      buf = zlib.brotliDecompressSync(buf);
+          } catch (e) {
+            resolve({ url: pageURL, statusCode: status, error: 'Decompress failed: ' + e.message }); return;
+          }
+          resolve({ url: pageURL, statusCode: status, body: buf.toString('utf8'), contentType: ct });
+        });
         res.on('error', e => resolve({ url: pageURL, statusCode: 0, error: e.message }));
       });
       req.on('timeout', () => { req.destroy(); resolve({ url: pageURL, statusCode: 0, error: 'Timeout' }); });
       req.on('error', e => resolve({ url: pageURL, statusCode: 0, error: e.message }));
       req.end();
     });
+  }
+
+  // Fetch with retries on connection-level failures. HTTP responses (incl. 4xx
+  // and 5xx) are returned as-is and never retried — only socket resets, DNS
+  // errors, and timeouts, which WAFs and flaky hosts often throw on first hit.
+  async function fetchURL(pageURL, hops) {
+    let res;
+    for (let attempt = 0; attempt <= FETCH_RETRIES; attempt++) {
+      res = await attemptFetch(pageURL, hops);
+      const retryable = res.statusCode === 0 && res.error && res.error !== 'Bad URL';
+      if (!retryable || attempt === FETCH_RETRIES) return res;
+      await sleep(600 * (attempt + 1));
+    }
+    return res;
   }
 
   // ── Sitemaps ──────────────────────────────────────────────────────────────
@@ -285,7 +317,16 @@ async function crawl(opts, emit, persistPage) {
     depth = depth || 0;
     if (depth > 4) return [];
     const res = await fetchURL(sitemapURL);
-    if (!res.body) return [];
+    if (!res.body) {
+      // Surface why a (possibly nested) sitemap could not be read, instead of
+      // silently dropping it — this is the usual cause of "0 URLs parsed".
+      const reason = res.error ? res.error
+                   : res.statusCode >= 400 ? `HTTP ${res.statusCode}`
+                   : res.nonHTML ? `unexpected content-type ${res.contentType || '?'}`
+                   : 'empty response';
+      emit('log', { message: `  Sitemap not read: ${sitemapURL} (${reason})` });
+      return [];
+    }
     const locs = parseXMLSitemapURLs(res.body);
     const out  = [];
     for (const loc of locs) {
@@ -339,13 +380,23 @@ async function crawl(opts, emit, persistPage) {
 
     const body     = res.body;
     const base     = res.url || sitemapURL;
+    emit('log', { message: `Sitemap fetched: HTTP ${res.statusCode}, content-type ${res.contentType || '?'}, ${body.length} bytes` });
+
+    // A WAF challenge/interstitial is served as HTML with status 200 or 403/503.
+    // Detect it so the user knows the host is gating bots, not that the sitemap
+    // is empty.
+    if (/just a moment|cf-browser-verification|attention required|enable javascript and cookies|captcha-bypass|_cf_chl/i.test(body)) {
+      emit('log', { message: 'Sitemap response looks like a bot-protection challenge page (Cloudflare/WAF). The host is blocking automated requests.' });
+      return 0;
+    }
+
     const looksXML = /<\s*(urlset|sitemapindex)[\s>]/i.test(body) || /<loc>\s*https?:\/\//i.test(body);
 
     let candidates;
     if (looksXML) {
       // fetchXMLSitemap walks nested sitemap-index files and returns page URLs.
       candidates = await fetchXMLSitemap(sitemapURL);
-      emit('log', { message: `Detected XML sitemap: ${candidates.length} URLs parsed` });
+      emit('log', { message: `Detected XML sitemap: ${candidates.length} URLs parsed (including nested sitemaps)` });
     } else {
       candidates = getLinks(body, base);
       emit('log', { message: `Treating as HTML sitemap: ${candidates.length} links found` });
@@ -361,6 +412,10 @@ async function crawl(opts, emit, persistPage) {
       const n = normalizeURL(u, baseOrigin);
       if (n && !visited.has(n)) { queue.push(n); queued++; }
     });
+
+    if (candidates.length > 0 && unique.length === 0) {
+      emit('log', { message: `All ${candidates.length} sitemap URLs were off-domain (not ${baseDomain}) or matched skip rules. Check that the Target URL domain matches the sitemap.` });
+    }
     emit('log', { message: `Sitemap seeding: ${unique.length} internal URLs, ${queued} queued` });
     return queued;
   }
