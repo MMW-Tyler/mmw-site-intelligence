@@ -485,7 +485,12 @@ app.post('/api/scout/:crawlId/generate', async (req, res) => {
     zip.file('manifest.md', scout.formatManifest(batchMeta, { siteName: name }));
 
     const zipBuffer  = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
-    const zipFilename = `scout-${domain}-${date}.zip`;
+    const slug = (name || domain)
+      .toLowerCase()
+      .replace(/^https?:\/\//, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'site';
+    const zipFilename = `${slug}-content-scout-${date}.zip`;
 
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="${zipFilename}"`);
