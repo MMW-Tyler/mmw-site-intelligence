@@ -1740,6 +1740,9 @@ app.post('/api/migrate/:crawlId/sample-test', async (req, res) => {
             pub_date: c.pub_date || htmlMeta.pub_date,
             author:   c.author   || htmlMeta.author,
             category: c.category,
+            featured_image: htmlMeta.featured_image
+              ? migrate.absoluteUrl(htmlMeta.featured_image, c.url)
+              : (images[0] ? images[0].original_url : null),
           },
           raw_html:        postHtml,
           normalized_html: normalized,
@@ -1987,6 +1990,39 @@ app.post('/api/migrate/:crawlId/push', async (req, res) => {
         let featuredOriginalSrc = null;
         const urlMap = {};
         let featuredMediaId = null;
+
+        // Prefer the source page's declared featured image (og:image et al.)
+        // over "first inline image in the body" — it's the post's actual
+        // thumbnail, and many posts never repeat it in the body markup.
+        if (migrate_images && htmlMeta.featured_image) {
+          const featAbsUrl = migrate.absoluteUrl(htmlMeta.featured_image, post.url);
+          try {
+            await gate();
+            const downloaded = await fetch(featAbsUrl, { signal: AbortSignal.timeout(60_000) });
+            if (!downloaded.ok) throw new Error(`HTTP ${downloaded.status} fetching ${featAbsUrl}`);
+            const buf = Buffer.from(await downloaded.arrayBuffer());
+            const mimeType = downloaded.headers.get('content-type') || 'application/octet-stream';
+            const filename = (featAbsUrl.split('/').pop() || `img-${Date.now()}`).split('?')[0].slice(0, 100) || `img-${Date.now()}.jpg`;
+
+            await gate();
+            const uploaded = await wpMigrate.uploadMedia(client.wp_url, auth, {
+              buffer:   buf,
+              filename,
+              mimeType,
+              alt:      post.title,
+            });
+            mediaCache.set(featAbsUrl, uploaded.source_url);
+            featuredMediaId = uploaded.media_id;
+            // If the same image also appears inline, drop that copy from the
+            // body so it doesn't render twice.
+            const inlineDup = inlineImages.find(img =>
+              migrate.absoluteUrl(img.original_url, post.url) === featAbsUrl);
+            if (inlineDup) featuredOriginalSrc = inlineDup.original_url;
+            emit('image_uploaded', { url: post.url, source: featAbsUrl, media_id: uploaded.media_id, featured: true });
+          } catch (imgErr) {
+            emit('image_failed', { url: post.url, source: featAbsUrl, error: imgErr.message });
+          }
+        }
 
         if (migrate_images && inlineImages.length > 0) {
           for (let i = 0; i < inlineImages.length; i++) {

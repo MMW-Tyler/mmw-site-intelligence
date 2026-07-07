@@ -5278,6 +5278,13 @@
               category: ${escapeHTML(s.metadata.category || '—')} ·
               images: ${s.images.length}
             </div>
+            ${s.metadata.featured_image ? `
+            <div class="mig-sample-meta" style="margin-top:4px;display:flex;align-items:center;gap:6px;">
+              featured image:
+              <img src="${escapeHTML(s.metadata.featured_image)}" alt="" style="height:32px;width:auto;border-radius:3px;">
+              <span title="${escapeHTML(s.metadata.featured_image)}">${escapeHTML(truncate(s.metadata.featured_image, 50))}</span>
+            </div>` : `
+            <div class="mig-sample-meta" style="margin-top:4px;">featured image: none detected</div>`}
           </div>
           <label class="mig-sample-confirm">
             <input type="checkbox" data-idx="${i}" onchange="confirmSample(${i}, this.checked)">

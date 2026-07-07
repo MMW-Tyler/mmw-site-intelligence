@@ -431,6 +431,93 @@ const droppedByDefaults = m.detectBlogPosts(nonStandardPages, { minWordCount: 1 
 ok('detectBlogPosts with default patterns drops non-standard URLs (the bug pagesAsCandidates works around)',
    droppedByDefaults.length === 0);
 
+// ─── Elementor (WordPress) single-post template ──────────────────────────────
+// Real-world shape: the post body lives in the theme-post-content widget,
+// and the same template wrapper carries share buttons, an author box, a
+// "Latest Post" sidebar with other posts' thumbnails, and a newsletter form.
+// None of the classic WP selectors (.entry-content etc.) exist.
+
+const ELEMENTOR_FULL_PAGE = `<!DOCTYPE html>
+<html>
+<head>
+  <title>Why Men’s Testosterone Levels Plateau | HWC of Texas</title>
+  <meta property="og:title" content="Why Men’s Testosterone Levels Plateau">
+  <meta property="og:image" content="https://hwcoftexas.com/wp-content/uploads/2025/07/testosterone-featured.jpg">
+  <meta property="article:published_time" content="2025-07-02T10:00:00-05:00">
+</head>
+<body>
+  <a class="skip-link screen-reader-text" href="#content">Skip to content</a>
+  <main id="content">
+  <div data-elementor-type="single-post" class="elementor elementor-location-single post-18019 post">
+    <div class="elementor-element elementor-widget elementor-widget-heading">
+      <div class="elementor-widget-container"><h6><a href="/blog/category/hormones/">Hormones</a></h6></div>
+    </div>
+    <div class="elementor-element elementor-widget elementor-widget-heading">
+      <div class="elementor-widget-container"><h1>Why Men’s Testosterone Levels Plateau</h1></div>
+    </div>
+    <div class="elementor-element elementor-widget elementor-widget-post-info">
+      <div class="elementor-widget-container"><ul><li><time>July 2, 2025</time></li><li>No Comments</li></ul></div>
+    </div>
+    <div class="elementor-element elementor-widget elementor-widget-theme-post-content">
+      <div class="elementor-widget-container">
+        <p>Most men do not notice it happening all at once. There is no single morning when you wake up and feel fundamentally different. Instead, it accumulates over months and years, and workouts that used to produce results begin to feel unrewarding.</p>
+        <p>Understanding what is happening physiologically, and what options exist to address it, changes the conversation from resigned acceptance to informed choice.</p>
+      </div>
+    </div>
+    <div class="elementor-element elementor-widget elementor-widget-share-buttons">
+      <div class="elementor-widget-container">Share this : facebook twitter linkedin whatsapp</div>
+    </div>
+    <div class="elementor-element elementor-widget elementor-widget-author-box">
+      <div class="elementor-widget-container"><img src="https://secure.gravatar.com/avatar/abc?s=300" alt="Picture of HWC">Hormone Wellness Center of Texas</div>
+    </div>
+    <div class="elementor-element elementor-widget elementor-widget-elementskit-category-list">
+      <div class="elementor-widget-container"><h4>Categories</h4></div>
+    </div>
+    <div class="elementor-element elementor-widget elementor-widget-form">
+      <div class="elementor-widget-container">Signup for our newsletter to get updated information.</div>
+    </div>
+    <div class="elementor-element elementor-widget elementor-widget-posts">
+      <div class="elementor-widget-container">
+        <h4>Latest Post</h4>
+        <article class="elementor-post"><img src="https://hwcoftexas.com/wp-content/uploads/2026/07/image-1.png">
+          <a href="/blog/other-post/">Why some doctors hesitate about HRT or TRT</a></article>
+      </div>
+    </div>
+  </div>
+  </main>
+</body>
+</html>`;
+
+const elementorBody = m.extractPostBody(ELEMENTOR_FULL_PAGE, 'wordpress');
+ok('extractPostBody (Elementor) picks the theme-post-content widget',
+   elementorBody.includes('Most men do not notice it happening') &&
+   elementorBody.includes('resigned acceptance to informed choice'));
+ok('extractPostBody (Elementor) excludes the Latest Post sidebar',
+   !elementorBody.includes('Latest Post') &&
+   !elementorBody.includes('2026/07/image-1.png') &&
+   !elementorBody.includes('Why some doctors hesitate'));
+ok('extractPostBody (Elementor) excludes share buttons / author box / newsletter',
+   !elementorBody.includes('Share this') &&
+   !elementorBody.includes('gravatar.com') &&
+   !elementorBody.toLowerCase().includes('newsletter'));
+ok('extractPostBody (Elementor) excludes the post-info meta row',
+   !elementorBody.includes('No Comments'));
+
+const elementorMeta = m.extractMetadataFromHtml(ELEMENTOR_FULL_PAGE);
+ok('extractMetadataFromHtml reads og:image as featured_image',
+   elementorMeta.featured_image === 'https://hwcoftexas.com/wp-content/uploads/2025/07/testosterone-featured.jpg');
+ok('extractMetadataFromHtml featured_image is null when absent',
+   m.extractMetadataFromHtml(WEEBLY_BLOG_PAGE).featured_image === null);
+ok('extractMetadataFromHtml (Elementor) still reads title and date',
+   elementorMeta.title.includes('Testosterone') &&
+   elementorMeta.pub_date === '2025-07-02T10:00:00-05:00');
+
+// The extracted Elementor body should carry no inline images at all here —
+// previously the sidebar thumbnails leaked in and the first one was wrongly
+// promoted to featured image.
+ok('extractInlineImages (Elementor) finds no sidebar/author images in the body',
+   m.extractInlineImages(elementorBody).length === 0);
+
 // ─── Summary ─────────────────────────────────────────────────────────────────
 
 console.log('');

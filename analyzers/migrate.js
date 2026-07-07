@@ -577,6 +577,12 @@ const PLATFORM_BODY_SELECTORS = {
     '#wsite-content',
   ],
   wordpress: [
+    // Elementor single-post templates render the body via the
+    // theme-post-content widget — none of the classic selectors below
+    // exist, so without this we'd fall through to a page-level fallback
+    // and drag in the whole template (sidebar, share row, author box).
+    '.elementor-widget-theme-post-content .elementor-widget-container',
+    '.elementor-widget-theme-post-content',
     '.entry-content',
     'article.post .post-content',
     'article .entry-content',
@@ -601,6 +607,8 @@ const PLATFORM_BODY_SELECTORS = {
 };
 
 const GENERIC_BODY_SELECTORS = [
+  '.elementor-widget-theme-post-content .elementor-widget-container',
+  '.elementor-widget-theme-post-content',
   'article .entry-content',
   'article .post-content',
   '.entry-content',
@@ -637,6 +645,20 @@ const BODY_STRIP_SELECTORS = [
   '.wsite-multicol-table-wrap', '.wsite-multicol-table',
   '.wsite-multicol', '.wsite-spacer',
   '.imgPusher',
+  // Elementor single-post template chrome: share row, author box, comments,
+  // post meta (date/category row), prev/next nav, and sidebar widgets
+  // (Latest Post grids, newsletter signup forms, category lists). These sit
+  // inside the same template wrapper as the post body, so they must go
+  // before any fallback selector runs.
+  '.elementor-widget-share-buttons', '.elementor-widget-author-box',
+  '.elementor-widget-post-comments', '.elementor-widget-post-navigation',
+  '.elementor-widget-post-info',
+  '.elementor-widget-posts', '.elementor-widget-recent-posts',
+  '.elementor-widget-archive-posts', '.elementor-widget-sidebar',
+  '.elementor-widget-form', '.elementor-widget-search-form',
+  '[class*="elementskit-category-list"]',
+  '.elementor-location-header', '.elementor-location-footer',
+  '.skip-link',
   'script', 'style', 'noscript', 'iframe', 'form',
 ];
 
@@ -665,7 +687,7 @@ function extractPostBody(fullHtml, platform) {
 // Used as fallback when RSS doesn't provide title/date/author/h1.
 
 function extractMetadataFromHtml(fullHtml) {
-  if (!fullHtml) return { title: '', h1: '', pub_date: null, author: null };
+  if (!fullHtml) return { title: '', h1: '', pub_date: null, author: null, featured_image: null };
   const $ = cheerio.load(fullHtml);
 
   // Title: og:title → Weebly .blog-title → <title>
@@ -703,11 +725,23 @@ function extractMetadataFromHtml(fullHtml) {
                null;
   if (author) author = author.replace(/^by\s+/i, '').trim();
 
+  // Featured image: the page's declared social/share image is the post's
+  // actual thumbnail on WordPress (and most builders emit it too). This is
+  // far more reliable than guessing from inline body images — many posts
+  // have a featured image that never appears in the body markup at all.
+  const featuredImage = $('meta[property="og:image"]').attr('content') ||
+                        $('meta[name="og:image"]').attr('content') ||
+                        $('meta[name="twitter:image"]').attr('content') ||
+                        $('meta[property="twitter:image"]').attr('content') ||
+                        $('link[rel="image_src"]').attr('href') ||
+                        null;
+
   return {
     title: title || h1,
     h1,
     pub_date: pubDate || null,
     author:   author || null,
+    featured_image: (featuredImage || '').trim() || null,
   };
 }
 
