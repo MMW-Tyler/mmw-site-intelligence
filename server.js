@@ -2549,6 +2549,60 @@ app.delete('/api/migrate/:crawlId/archives/:archiveId', async (req, res) => {
   }
 });
 
+// GET/POST /api/admin/import-archive
+//   Token-gated one-off admin action: imports a migration archive JSON file
+//   already committed under scripts/archives/ into migration_archives.
+//   Exists for hosts with no shell access (e.g. Render's free tier) — the
+//   running app process already has the Supabase credentials, so this lets
+//   a deployed instance import an archive over a plain HTTP request instead
+//   of needing a shell into the container. Disabled unless
+//   IMPORT_ARCHIVE_TOKEN is set in the environment; requires that exact
+//   token via ?token=, the x-import-token header, or a JSON body "token"
+//   field. Safe to remove (or rotate the token) once you're done with it.
+app.all('/api/admin/import-archive', async (req, res) => {
+  const expected = process.env.IMPORT_ARCHIVE_TOKEN;
+  if (!expected) {
+    return res.status(503).json({ error: 'IMPORT_ARCHIVE_TOKEN is not configured on this server.' });
+  }
+  const token = req.query.token || req.headers['x-import-token'] || (req.body && req.body.token);
+  if (!token || token !== expected) {
+    return res.status(403).json({ error: 'Invalid or missing import token.' });
+  }
+
+  const fileParam = req.query.file || (req.body && req.body.filePath);
+  if (!fileParam) {
+    return res.status(400).json({ error: '"file" (path relative to scripts/archives/) is required.' });
+  }
+
+  try {
+    const fs   = require('fs');
+    const path = require('path');
+    const { importArchive } = require('./lib/archive-import');
+
+    const archivesDir = path.join(__dirname, 'scripts', 'archives');
+    const resolved = path.resolve(archivesDir, String(fileParam));
+    if (resolved !== archivesDir && !resolved.startsWith(archivesDir + path.sep)) {
+      return res.status(400).json({ error: '"file" must resolve inside scripts/archives/.' });
+    }
+
+    const archive = JSON.parse(fs.readFileSync(resolved, 'utf8'));
+    const domain = req.query.domain || (req.body && req.body.domain);
+    const name   = req.query.name   || (req.body && req.body.name);
+    const result = await importArchive(archive, { domain, name });
+
+    res.json({
+      ok:          true,
+      archive_id:  result.archiveId,
+      domain:      result.domain,
+      post_count:  result.postCount,
+      image_count: result.imageCount,
+    });
+  } catch (err) {
+    console.error('[admin import-archive] error:', err);
+    res.status(err.problems ? 400 : 500).json({ error: err.message, problems: err.problems });
+  }
+});
+
 // ─── Brand Voice cross-tool API (authenticated) ───────────────────────────────
 // Mounted here so /api/brand-voice/:clientId and /api/brand-voice/by-domain/:domain
 // are both available. The router handles auth internally.
