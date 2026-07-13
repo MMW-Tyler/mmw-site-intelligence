@@ -25,6 +25,8 @@
  *   wordCount(text)                         → integer
  *   extractPostBody(fullHtml, platform)     → inner HTML of the post body
  *   extractMetadataFromHtml(fullHtml)       → { title, h1, pub_date, author }
+ *   featuredImageCandidates(html, htmlMeta, url) → ordered list of images to try as featured
+ *   buildArchivedPost(post, fullHtml, platform, downloadImage) → { record, events }
  */
 
 const cheerio        = require('cheerio');
@@ -745,6 +747,119 @@ function extractMetadataFromHtml(fullHtml) {
   };
 }
 
+// ─── Featured image resolution ────────────────────────────────────────────────
+// Shared by the live-push flow (server.js push endpoint) and the archive
+// flow (buildArchivedPost below) so the "what counts as the featured image"
+// rule can't drift between the two. Returns candidates in priority order —
+// the caller downloads/uploads them and stops at the first one that
+// succeeds, so a broken og:image URL falls back to the first inline image
+// instead of leaving the post with no featured image at all.
+
+function featuredImageCandidates(html, htmlMeta, postUrl) {
+  const inlineImages = extractInlineImages(html);
+  const candidates = [];
+
+  if (htmlMeta && htmlMeta.featured_image) {
+    const absUrl = absoluteUrl(htmlMeta.featured_image, postUrl);
+    const inlineDup = inlineImages.find(img => absoluteUrl(img.original_url, postUrl) === absUrl);
+    // rawSrc is only set when the declared featured image also appears
+    // inline — that's what tells the caller to strip it from the body so
+    // it doesn't render twice.
+    candidates.push({ absUrl, rawSrc: inlineDup ? inlineDup.original_url : null, source: 'og' });
+  }
+  if (inlineImages.length > 0) {
+    const first = inlineImages[0];
+    candidates.push({ absUrl: absoluteUrl(first.original_url, postUrl), rawSrc: first.original_url, source: 'inline' });
+  }
+  return { candidates, inlineImages };
+}
+
+// ─── Archive: freeze one post's extracted content + image bytes ─────────────
+// Used to snapshot a blog migration before the source site disappears —
+// e.g. mid-migration, when the old site is about to be decommissioned.
+// `downloadImage` is injected (async absoluteUrl => { buf, mimeType, filename })
+// so this function stays fetch-free and unit-testable; server.js supplies
+// the real fetch-based implementation.
+//
+// Returns { record, events }. `events` is an ordered list of
+// { type: 'image_archived'|'image_failed', source, featured, error? } —
+// the caller (server.js) replays these as SSE progress events in order.
+//
+// `record.html` keeps the original (pre-rewrite) <img> src attributes —
+// exactly what rewriteImageUrls/removeImageFromHtml expect to match against
+// later, whether that's at push time (live flow) or import time (archive
+// flow, once images have been re-uploaded to the destination).
+
+async function buildArchivedPost(post, fullHtml, platform, downloadImage) {
+  const events = [];
+  const htmlMeta = extractMetadataFromHtml(fullHtml);
+  const rawBody  = extractPostBody(fullHtml, platform);
+
+  const title   = post.title    || htmlMeta.title || htmlMeta.h1 || '(untitled)';
+  const pubDate = post.pub_date || htmlMeta.pub_date || null;
+  const author  = post.author   || htmlMeta.author   || null;
+  const slug    = slugFromUrl(post.url) || post.slug || buildSlug(title, post.url);
+
+  const { candidates, inlineImages } = featuredImageCandidates(rawBody, htmlMeta, post.url);
+
+  let featuredImage  = null;
+  let featuredRawSrc = null;
+  for (const cand of candidates) {
+    try {
+      const dl = await downloadImage(cand.absUrl);
+      featuredImage = {
+        original_url: cand.absUrl,
+        filename:     dl.filename,
+        mime_type:    dl.mimeType,
+        data_base64:  dl.buf.toString('base64'),
+      };
+      featuredRawSrc = cand.rawSrc;
+      events.push({ type: 'image_archived', source: cand.absUrl, featured: true });
+      break;
+    } catch (e) {
+      events.push({ type: 'image_failed', source: cand.absUrl, error: e.message, featured: true });
+    }
+  }
+
+  const bodyMinusFeatured = featuredRawSrc ? removeImageFromHtml(rawBody, featuredRawSrc) : rawBody;
+
+  const images = [];
+  for (const img of inlineImages) {
+    if (img.original_url === featuredRawSrc) continue; // already captured above
+    const absUrl = absoluteUrl(img.original_url, post.url);
+    try {
+      const dl = await downloadImage(absUrl);
+      images.push({
+        original_url: img.original_url,
+        filename:     dl.filename,
+        mime_type:    dl.mimeType,
+        data_base64:  dl.buf.toString('base64'),
+        alt:          img.alt,
+        width:        img.width,
+        height:       img.height,
+      });
+      events.push({ type: 'image_archived', source: absUrl, featured: false });
+    } catch (e) {
+      events.push({ type: 'image_failed', source: absUrl, error: e.message, featured: false });
+    }
+  }
+
+  const record = {
+    url:        post.url,
+    title,
+    slug,
+    pub_date:   pubDate,
+    author,
+    category:   post.category || null,
+    html:       bodyMinusFeatured,
+    word_count: wordCount(bodyMinusFeatured.replace(/<[^>]+>/g, ' ')),
+    featured_image: featuredImage,
+    images,
+  };
+
+  return { record, events };
+}
+
 // ─── Representative sample picker ─────────────────────────────────────────────
 
 function pickRepresentativeSamples(candidates) {
@@ -799,6 +914,8 @@ module.exports = {
   absoluteUrl,
   extractPostBody,
   extractMetadataFromHtml,
+  featuredImageCandidates,
+  buildArchivedPost,
   DEFAULT_URL_PATTERNS,
   EXCLUDE_URL_PATTERNS,
 };

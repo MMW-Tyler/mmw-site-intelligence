@@ -1808,6 +1808,15 @@
         </div>
       </div>
 
+      <!-- Archived migrations -->
+      <div class="card" id="mig-archives-card">
+        <div class="card-title" style="margin-bottom:2px;">Archived migrations</div>
+        <div class="card-sub">Snapshots of extracted post HTML and images, saved so a migration can finish later even if the source site goes offline in the meantime. Import loads a saved archive into steps 2&ndash;4 below &mdash; no live fetch from the source site required.</div>
+        <div id="mig-archives-list" style="margin-top:12px;"></div>
+        <div id="mig-archives-empty" style="margin-top:12px;font-size:13px;color:var(--text-muted);">No archives saved yet for this client.</div>
+        <div id="mig-archive-mode-banner" class="mig-banner ok hidden" style="margin-top:14px;"></div>
+      </div>
+
       <!-- ── Panel 1: Discover ──────────────────────────────────────────── -->
       <div class="card mig-step" id="mig-panel-1">
         <div class="mig-step-header">
@@ -1870,6 +1879,16 @@
             </table>
           </div>
           <div class="card-sub" id="mig-discover-sub" style="margin-top:8px;"></div>
+
+          <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border-strong);display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+            <input type="text" id="mig-archive-name" placeholder="Archive name (optional)"
+                   style="flex:1;min-width:180px;padding:9px 12px;font-size:13px;font-family:Barlow,sans-serif;color:var(--dark);background:var(--white);border:1px solid var(--border-strong);border-radius:8px;">
+            <button class="secondary" id="mig-archive-btn" onclick="runMigrateArchiveNow()">Archive selected posts now</button>
+            <span id="mig-archive-hint" style="font-size:12px;color:var(--text-muted);">Fetches and saves the selected posts' content + images right now &mdash; no WordPress needed. Use this before the source site goes offline.</span>
+          </div>
+          <div id="mig-archive-results" class="hidden" style="margin-top:12px;">
+            <div class="log-stream" id="mig-archive-log" style="max-height:220px;overflow-y:auto;"></div>
+          </div>
         </div>
       </div>
 
@@ -4915,6 +4934,11 @@
     connectionOk:   false,
     pushES:         null,
     pushing:        false,
+    archives:         [],
+    archiving:        false,
+    archiveId:        null,
+    archiveName:      null,
+    archivePostCount: 0,
   };
 
   async function initMigrateTab() {
@@ -4962,12 +4986,17 @@
     migrateState.samplesConfirmed = [false, false, false];
     migrateState.sampleOk = false;
     migrateState.connectionOk = false;
+    migrateState.archiveId = null;
+    migrateState.archiveName = null;
+    migrateState.archivePostCount = 0;
     document.getElementById('mig-discover-results').classList.add('hidden');
     document.getElementById('mig-sample-results').classList.add('hidden');
     document.getElementById('mig-conn-results').classList.add('hidden');
     document.getElementById('mig-push-results').classList.add('hidden');
+    document.getElementById('mig-archive-mode-banner').classList.add('hidden');
     refreshMigrateGates();
     showMigrateState('main');
+    loadMigrateArchives();
 
     // Light-weight ping for crawl meta + wp creds — runs discovery only when user clicks
     try {
@@ -5160,13 +5189,18 @@
   }
 
   function refreshMigrateGates() {
-    const selCount = migrateState.selected.size;
+    const inArchiveMode = !!migrateState.archiveId;
+    const selCount = inArchiveMode ? migrateState.archivePostCount : migrateState.selected.size;
 
-    // Step 2 enable condition: ≥1 selected
+    // Step 2 enable condition: ≥1 selected (live flow) — or already loaded from an archive
     const sampleBtn  = document.getElementById('mig-sample-btn');
     const sampleHint = document.getElementById('mig-sample-hint');
     const panel2 = document.getElementById('mig-panel-2');
-    if (selCount > 0 && !migrateState.pushing) {
+    if (inArchiveMode) {
+      sampleBtn.disabled = true;
+      panel2.classList.remove('mig-disabled');
+      sampleHint.textContent = `Using archive "${migrateState.archiveName}" (${migrateState.archivePostCount} posts). Confirm the samples below.`;
+    } else if (selCount > 0 && !migrateState.pushing) {
       sampleBtn.disabled = false;
       panel2.classList.remove('mig-disabled');
       sampleHint.textContent = `${selCount} post${selCount === 1 ? '' : 's'} selected.`;
@@ -5193,7 +5227,7 @@
       if (!migrateState.hasWpCreds) {
         connHint.textContent = 'Configure WordPress credentials in the Clients tab first.';
       } else if (migrateState.samples.length === 0) {
-        connHint.textContent = 'Run the sample test in step 2 first.';
+        connHint.textContent = inArchiveMode ? 'Load an archive above first.' : 'Run the sample test in step 2 first.';
       } else {
         connHint.textContent = 'Confirm all 3 samples in step 2 to enable.';
       }
@@ -5206,12 +5240,16 @@
     if (migrateState.connectionOk && allConfirmed && selCount > 0 && !migrateState.pushing) {
       pushBtn.disabled = false;
       panel4.classList.remove('mig-disabled');
-      pushHint.textContent = `Ready to push ${selCount} post${selCount === 1 ? '' : 's'} to ${migrateState.wpUrl}.`;
+      pushBtn.textContent = inArchiveMode ? 'Start import' : 'Start migration';
+      pushHint.textContent = inArchiveMode
+        ? `Ready to import ${selCount} post${selCount === 1 ? '' : 's'} from "${migrateState.archiveName}" to ${migrateState.wpUrl}.`
+        : `Ready to push ${selCount} post${selCount === 1 ? '' : 's'} to ${migrateState.wpUrl}.`;
     } else {
       pushBtn.disabled = true;
       panel4.classList.add('mig-disabled');
+      pushBtn.textContent = inArchiveMode ? 'Start import' : 'Start migration';
       if (!migrateState.connectionOk) pushHint.textContent = 'Pass the connection check in step 3 to enable.';
-      else if (selCount === 0)        pushHint.textContent = 'Select at least one post in step 1.';
+      else if (selCount === 0)        pushHint.textContent = inArchiveMode ? 'Load an archive above first.' : 'Select at least one post in step 1.';
       else                            pushHint.textContent = '';
     }
 
@@ -5282,7 +5320,7 @@
             <div class="mig-sample-meta" style="margin-top:4px;display:flex;align-items:center;gap:6px;">
               featured image:
               <img src="${escapeHTML(s.metadata.featured_image)}" alt="" style="height:32px;width:auto;border-radius:3px;">
-              <span title="${escapeHTML(s.metadata.featured_image)}">${escapeHTML(truncate(s.metadata.featured_image, 50))}</span>
+              <span title="${escapeHTML(s.metadata.featured_image_label || s.metadata.featured_image)}">${escapeHTML(truncate(s.metadata.featured_image_label || s.metadata.featured_image, 50))}</span>
             </div>` : `
             <div class="mig-sample-meta" style="margin-top:4px;">featured image: none detected</div>`}
           </div>
@@ -5306,7 +5344,7 @@
               ? '<div style="font-size:13px;color:var(--text-muted);">No inline images detected.</div>'
               : `<div class="mig-sample-images">${s.images.map(img => `
                   <div class="mig-thumb">
-                    <img src="${escapeHTML(absUrlForPreview(img.original_url, s.url))}" alt="">
+                    <img src="${escapeHTML(img.preview_src || absUrlForPreview(img.original_url, s.url))}" alt="">
                     <div class="mig-thumb-cap" title="${escapeHTML(img.original_url)}">${escapeHTML(truncate(img.original_url, 40))}</div>
                   </div>
                 `).join('')}</div>`}
@@ -5397,14 +5435,17 @@
   }
 
   async function runMigratePush() {
-    const urls = Array.from(migrateState.selected);
-    if (urls.length === 0) return;
+    const inArchiveMode = !!migrateState.archiveId;
+    const urls  = inArchiveMode ? [] : Array.from(migrateState.selected);
+    const count = inArchiveMode ? migrateState.archivePostCount : urls.length;
+    if (count === 0) return;
     const migrateImages      = document.getElementById('mig-opt-images').checked;
     const postStatus         = document.getElementById('mig-opt-status').value;
     const additionalCategory = (document.getElementById('mig-opt-additional-category').value || '').trim();
 
     const confirmMsg =
-      `Migrate ${urls.length} post${urls.length === 1 ? '' : 's'} to ${migrateState.wpUrl}?\n\n` +
+      `${inArchiveMode ? 'Import' : 'Migrate'} ${count} post${count === 1 ? '' : 's'}` +
+      `${inArchiveMode ? ` from "${migrateState.archiveName}"` : ''} to ${migrateState.wpUrl}?\n\n` +
       `Status: ${postStatus === 'publish' ? 'PUBLISHED' : 'Draft'}\n` +
       `Images: ${migrateImages ? 'will be re-uploaded' : 'will stay on source domain'}` +
       (additionalCategory ? `\nCategory: "${additionalCategory}"` : '');
@@ -5412,7 +5453,7 @@
 
     const btn       = document.getElementById('mig-push-btn');
     const cancelBtn = document.getElementById('mig-push-cancel-btn');
-    btn.disabled = true; btn.textContent = 'Migrating…';
+    btn.disabled = true; btn.textContent = inArchiveMode ? 'Importing…' : 'Migrating…';
     cancelBtn.classList.remove('hidden');
     migrateState.pushing = true;
 
@@ -5436,15 +5477,16 @@
     migrateState._pushAC = ac;
 
     try {
-      const res = await apiFetch(`/api/migrate/${migrateState.crawlId}/push`, {
+      const endpoint = inArchiveMode
+        ? `/api/migrate/${migrateState.crawlId}/archives/${migrateState.archiveId}/import`
+        : `/api/migrate/${migrateState.crawlId}/push`;
+      const payload = inArchiveMode
+        ? { migrate_images: migrateImages, post_status: postStatus, additional_category: additionalCategory || null }
+        : { urls, migrate_images: migrateImages, post_status: postStatus, additional_category: additionalCategory || null };
+      const res = await apiFetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          urls,
-          migrate_images:      migrateImages,
-          post_status:         postStatus,
-          additional_category: additionalCategory || null,
-        }),
+        body: JSON.stringify(payload),
         signal: ac.signal,
       });
       if (!res.ok) {
@@ -5499,7 +5541,7 @@
     } finally {
       migrateState.pushing = false;
       migrateState._pushAC = null;
-      btn.disabled = false; btn.textContent = 'Start migration';
+      btn.disabled = false;
       cancelBtn.classList.add('hidden');
       refreshMigrateGates();
     }
@@ -5507,6 +5549,174 @@
 
   function cancelMigratePush() {
     if (migrateState._pushAC) migrateState._pushAC.abort();
+  }
+
+  // ─── Archived migrations ─────────────────────────────────────────────────
+  // Freeze selected posts' content + images now (no WordPress needed), so a
+  // migration can finish later even if the source site goes offline in the
+  // meantime. Importing an archive loads it into steps 2–4 in place of a
+  // live sample-test — the URL selection already happened at archive time.
+
+  async function loadMigrateArchives() {
+    if (!migrateState.crawlId) return;
+    try {
+      const res = await apiFetch(`/api/migrate/${migrateState.crawlId}/archives`);
+      const data = await res.json();
+      migrateState.archives = data.archives || [];
+    } catch (e) {
+      console.error('Failed to load archives', e);
+      migrateState.archives = [];
+    }
+    renderMigrateArchivesList();
+  }
+
+  function renderMigrateArchivesList() {
+    const list  = document.getElementById('mig-archives-list');
+    const empty = document.getElementById('mig-archives-empty');
+    if (migrateState.archives.length === 0) {
+      list.innerHTML = '';
+      empty.classList.remove('hidden');
+      return;
+    }
+    empty.classList.add('hidden');
+    list.innerHTML = migrateState.archives.map(a => `
+      <div class="mig-archive-row" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div>
+          <div style="font-weight:600;font-size:13px;font-family:Barlow,sans-serif;color:var(--dark);">${escapeHTML(a.name)}</div>
+          <div style="font-size:12px;color:var(--text-muted);">
+            ${a.post_count} post${a.post_count === 1 ? '' : 's'} · ${a.image_count} image${a.image_count === 1 ? '' : 's'} ·
+            platform: ${escapeHTML(a.platform || 'unknown')} · saved ${new Date(a.created_at).toLocaleString()}
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-shrink:0;">
+          <button class="primary" style="font-size:12px;padding:6px 12px;" onclick="importMigrateArchive('${a.id}')">Import this archive</button>
+          <button class="danger" style="font-size:12px;padding:6px 12px;" onclick="deleteMigrateArchive('${a.id}')">Delete</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  async function runMigrateArchiveNow() {
+    const urls = Array.from(migrateState.selected);
+    if (urls.length === 0) { alert('Select posts in step 1 first.'); return; }
+    const name = (document.getElementById('mig-archive-name').value || '').trim();
+
+    const btn = document.getElementById('mig-archive-btn');
+    btn.disabled = true; btn.textContent = 'Archiving…';
+    migrateState.archiving = true;
+
+    document.getElementById('mig-archive-results').classList.remove('hidden');
+    const log = document.getElementById('mig-archive-log');
+    log.innerHTML = '';
+
+    function logLineArch(text, kind) {
+      const div = document.createElement('div');
+      div.className = 'log-line log-' + (kind || 'info');
+      const ts = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      div.innerHTML = `<span class="ts">${ts}</span>${escapeHTML(text)}`;
+      log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    try {
+      const res = await apiFetch(`/api/migrate/${migrateState.crawlId}/archive`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ urls, name: name || undefined }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || res.statusText);
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const events = buf.split('\n\n');
+        buf = events.pop();
+        for (const evt of events) {
+          const line = evt.split('\n').find(l => l.startsWith('data:'));
+          if (!line) continue;
+          let p; try { p = JSON.parse(line.slice(5).trim()); } catch (_) { continue; }
+          if (p.type === 'log')                 logLineArch(p.message, 'info');
+          else if (p.type === 'post_started')    logLineArch(`→ ${truncate(p.title || p.url, 80)}`, 'info');
+          else if (p.type === 'image_archived')  logLineArch(`  ↓ saved image ← ${truncate(p.source, 60)}`, 'page');
+          else if (p.type === 'image_failed')    logLineArch(`  ✕ image failed (${truncate(p.source, 60)}): ${p.error}`, 'warn');
+          else if (p.type === 'post_archived')   logLineArch(`  ✓ archived (${p.image_count} image${p.image_count === 1 ? '' : 's'})`, 'good');
+          else if (p.type === 'post_failed')     logLineArch(`  ✕ failed: ${p.error}`, 'error');
+          else if (p.type === 'done') {
+            logLineArch(`Done. Archived ${p.post_count} of ${p.total} post${p.total === 1 ? '' : 's'} as "${p.name}".`, 'good');
+            await loadMigrateArchives();
+          } else if (p.type === 'error') {
+            logLineArch('ERROR: ' + p.message, 'error');
+          }
+        }
+      }
+    } catch (e) {
+      logLineArch('Archive failed: ' + e.message, 'error');
+    } finally {
+      migrateState.archiving = false;
+      btn.disabled = false; btn.textContent = 'Archive selected posts now';
+    }
+  }
+
+  async function importMigrateArchive(archiveId) {
+    if (!confirm('Load this archive into steps 2–4? This replaces any current sample-test selection there.')) return;
+    try {
+      const res = await apiFetch(`/api/migrate/${migrateState.crawlId}/archives/${archiveId}/preview`);
+      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))).error) || res.statusText);
+      const data = await res.json();
+
+      migrateState.archiveId        = archiveId;
+      migrateState.archiveName      = data.archive ? data.archive.name : '';
+      migrateState.archivePostCount = data.archive ? data.archive.post_count : 0;
+      migrateState.samples          = data.samples || [];
+      migrateState.samplesConfirmed = migrateState.samples.map(() => false);
+      migrateState.platform         = data.platform || migrateState.platform;
+      migrateState.connectionOk     = false; // WP creds may have changed since this archive was made — re-verify
+
+      renderMigrateSamples();
+      document.getElementById('mig-sample-results').classList.remove('hidden');
+      updateSampleBanner();
+
+      const banner = document.getElementById('mig-archive-mode-banner');
+      banner.classList.remove('hidden');
+      banner.className = 'mig-banner ok';
+      banner.innerHTML = `Loaded "${escapeHTML(migrateState.archiveName)}" (${migrateState.archivePostCount} posts). ` +
+        `Confirm the samples in step 2, then run the connection test in step 3. ` +
+        `<a href="#" onclick="clearMigrateArchiveMode();return false;">Switch back to live selection</a>`;
+
+      document.getElementById('mig-panel-2').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      refreshMigrateGates();
+    } catch (e) {
+      alert('Failed to load archive: ' + e.message);
+    }
+  }
+
+  function clearMigrateArchiveMode() {
+    migrateState.archiveId = null;
+    migrateState.archiveName = null;
+    migrateState.archivePostCount = 0;
+    migrateState.samples = [];
+    migrateState.samplesConfirmed = [false, false, false];
+    document.getElementById('mig-sample-results').classList.add('hidden');
+    document.getElementById('mig-archive-mode-banner').classList.add('hidden');
+    refreshMigrateGates();
+  }
+
+  async function deleteMigrateArchive(archiveId) {
+    if (!confirm('Delete this saved archive? This cannot be undone.')) return;
+    try {
+      const res = await apiFetch(`/api/migrate/${migrateState.crawlId}/archives/${archiveId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))).error) || res.statusText);
+      if (migrateState.archiveId === archiveId) clearMigrateArchiveMode();
+      await loadMigrateArchives();
+    } catch (e) {
+      alert('Failed to delete archive: ' + e.message);
+    }
   }
 
 </script>

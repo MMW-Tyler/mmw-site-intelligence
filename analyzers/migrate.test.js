@@ -518,8 +518,121 @@ ok('extractMetadataFromHtml (Elementor) still reads title and date',
 ok('extractInlineImages (Elementor) finds no sidebar/author images in the body',
    m.extractInlineImages(elementorBody).length === 0);
 
+// ─── featuredImageCandidates / buildArchivedPost ─────────────────────────────
+// These back the "archive now, import later" flow: freezing a blog's post
+// HTML + image bytes while the source site is still up, so migration can
+// finish later even if the old site has since been decommissioned.
+
+const featCandOg = m.featuredImageCandidates(
+  ELEMENTOR_FULL_PAGE, m.extractMetadataFromHtml(ELEMENTOR_FULL_PAGE),
+  'https://hwcoftexas.com/blog/why-mens-testosterone-levels-plateau/');
+ok('featuredImageCandidates puts og:image first when present',
+   featCandOg.candidates[0].source === 'og' &&
+   featCandOg.candidates[0].absUrl === 'https://hwcoftexas.com/wp-content/uploads/2025/07/testosterone-featured.jpg');
+ok('featuredImageCandidates rawSrc is null when og:image has no inline duplicate',
+   featCandOg.candidates[0].rawSrc === null);
+
+const featCandInline = m.featuredImageCandidates(
+  WEEBLY_FULL_PAGE, m.extractMetadataFromHtml(WEEBLY_FULL_PAGE),
+  'https://www.wellnessminneapolis.com/articles/acne');
+ok('featuredImageCandidates falls back to first inline image when no og:image',
+   featCandInline.candidates.length === 1 && featCandInline.candidates[0].source === 'inline' &&
+   featCandInline.candidates[0].rawSrc === '/uploads/1/3/1/0/13106539/header.jpg');
+
+// Fake downloader: records what it was asked to fetch, fails on demand.
+function fakeDownloader(opts) {
+  opts = opts || {};
+  const calls = [];
+  const fn = async (absUrl) => {
+    calls.push(absUrl);
+    if (opts.failOn && opts.failOn.includes(absUrl)) throw new Error('simulated fetch failure');
+    return { buf: Buffer.from('fake-bytes-' + absUrl), mimeType: 'image/jpeg', filename: (absUrl.split('/').pop() || 'img.jpg') };
+  };
+  fn.calls = calls;
+  return fn;
+}
+
+// Note: this file is plain CommonJS (no top-level await), so the async
+// archive-builder tests below run in an IIFE whose promise the "Summary"
+// section at the bottom explicitly waits on before printing totals / exiting —
+// otherwise the exit-code check would race ahead of these assertions.
+const archiveTestsDone = (async () => {
+  // Case 1: og:image present and downloadable — becomes featured, no inline
+  // duplicate to strip (this fixture has no <img> tags in the body).
+  {
+    const dl = fakeDownloader();
+    const post = { url: 'https://hwcoftexas.com/blog/why-mens-testosterone-levels-plateau/', title: '', pub_date: null, author: null, category: null, slug: null };
+    const { record, events } = await m.buildArchivedPost(post, ELEMENTOR_FULL_PAGE, 'wordpress', dl);
+    ok('buildArchivedPost (og:image case) sets featured_image from og:image',
+       record.featured_image && record.featured_image.original_url ===
+       'https://hwcoftexas.com/wp-content/uploads/2025/07/testosterone-featured.jpg');
+    ok('buildArchivedPost (og:image case) has no inline images to strip/keep',
+       record.images.length === 0);
+    ok('buildArchivedPost (og:image case) emits one image_archived(featured) event',
+       events.length === 1 && events[0].type === 'image_archived' && events[0].featured === true);
+    ok('buildArchivedPost (og:image case) keeps the post body text',
+       record.html.includes('Most men do not notice it happening'));
+  }
+
+  // Case 2: no og:image — first inline image (Weebly header) is promoted to
+  // featured AND stripped from the body so it doesn't render twice.
+  {
+    const dl = fakeDownloader();
+    const post = { url: 'https://www.wellnessminneapolis.com/articles/acne', title: '', pub_date: null, author: null, category: null, slug: null };
+    const { record } = await m.buildArchivedPost(post, WEEBLY_FULL_PAGE, 'weebly', dl);
+    ok('buildArchivedPost (inline-fallback case) promotes first inline image to featured',
+       record.featured_image && record.featured_image.original_url.endsWith('header.jpg'));
+    ok('buildArchivedPost (inline-fallback case) strips the promoted image from the body',
+       !record.html.includes('header.jpg'));
+    ok('buildArchivedPost (inline-fallback case) leaves no duplicate in images[]',
+       record.images.length === 0);
+  }
+
+  // Case 3: og:image download fails — falls back to the first inline image
+  // instead of leaving the post with no featured image.
+  {
+    const failUrl = 'https://hwcoftexas.com/wp-content/uploads/2025/07/testosterone-featured.jpg';
+    const htmlWithBrokenOgAndInline = ELEMENTOR_FULL_PAGE.replace(
+      '<div class="elementor-widget-container">\n        <p>Most men do not notice it happening all at once.',
+      '<div class="elementor-widget-container">\n        <img src="/uploads/hero.jpg" alt="hero">\n        <p>Most men do not notice it happening all at once.'
+    );
+    const dl = fakeDownloader({ failOn: [failUrl] });
+    const post = { url: 'https://hwcoftexas.com/blog/why-mens-testosterone-levels-plateau/', title: '', pub_date: null, author: null, category: null, slug: null };
+    const { record, events } = await m.buildArchivedPost(post, htmlWithBrokenOgAndInline, 'wordpress', dl);
+    ok('buildArchivedPost (og:image failure case) falls back to the first inline image',
+       record.featured_image && record.featured_image.original_url.endsWith('hero.jpg'),
+       JSON.stringify(record.featured_image));
+    ok('buildArchivedPost (og:image failure case) records the og:image failure event',
+       events.some(e => e.type === 'image_failed' && e.featured === true));
+    ok('buildArchivedPost (og:image failure case) strips the promoted hero image from the body',
+       !record.html.includes('hero.jpg'));
+  }
+
+  // Case 4: multiple inline images beyond the featured one are all kept.
+  {
+    const multiImgHtml = `<html><head></head><body><div class="entry-content">
+      <p>Intro text with enough words to pass extraction thresholds for this fixture case.</p>
+      <img src="/img/one.jpg" alt="one">
+      <p>More content in between images to keep the extractor happy about body length here.</p>
+      <img src="/img/two.jpg" alt="two">
+    </div></body></html>`;
+    const dl = fakeDownloader();
+    const post = { url: 'https://example.com/blog/multi', title: 'Multi', pub_date: null, author: null, category: null, slug: null };
+    const { record } = await m.buildArchivedPost(post, multiImgHtml, 'wordpress', dl);
+    ok('buildArchivedPost (multi-image case) promotes the first image to featured',
+       record.featured_image && record.featured_image.original_url.endsWith('one.jpg'));
+    ok('buildArchivedPost (multi-image case) keeps the second image inline',
+       record.images.length === 1 && record.images[0].original_url === '/img/two.jpg');
+  }
+})();
+
 // ─── Summary ─────────────────────────────────────────────────────────────────
 
-console.log('');
-console.log(`${passed} passed, ${failed} failed`);
-if (failed > 0) process.exit(1);
+archiveTestsDone.then(() => {
+  console.log('');
+  console.log(`${passed} passed, ${failed} failed`);
+  if (failed > 0) process.exit(1);
+}).catch(e => {
+  console.error('Async archive-builder tests threw:', e);
+  process.exit(1);
+});

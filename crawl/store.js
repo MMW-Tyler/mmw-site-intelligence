@@ -576,6 +576,81 @@ async function getOptimizationHistory(clientId) {
   };
 }
 
+// ─── Migration archives ───────────────────────────────────────────────────────
+// Freezes a blog migration's extracted post HTML + metadata + downloaded
+// image bytes (base64, inside `data`) so it can be imported into WordPress
+// later without depending on the source site still being up.
+
+/**
+ * Persist a full migration archive.
+ *
+ * @param {Object} opts
+ * @param {string} opts.clientId
+ * @param {string} [opts.crawlId]
+ * @param {string} opts.name
+ * @param {string} [opts.sourceUrl]
+ * @param {string} [opts.platform]
+ * @param {number} opts.postCount
+ * @param {number} opts.imageCount
+ * @param {Object} opts.data - { version, source_url, platform, exported_at, posts, errors }
+ * @returns {string} the new archive's id
+ */
+async function createMigrationArchive({ clientId, crawlId, name, sourceUrl, platform, postCount, imageCount, data }) {
+  const sb = getClient();
+  const { data: row, error } = await sb
+    .from('migration_archives')
+    .insert({
+      client_id:   clientId,
+      crawl_id:    crawlId || null,
+      name,
+      source_url:  sourceUrl  || null,
+      platform:    platform   || 'unknown',
+      post_count:  postCount  || 0,
+      image_count: imageCount || 0,
+      data,
+    })
+    .select('id')
+    .single();
+  if (error) throw error;
+  return row.id;
+}
+
+/**
+ * Lightweight list for the Migrate tab — excludes the (potentially large)
+ * `data` payload so listing archives stays cheap.
+ */
+async function listMigrationArchives(clientId) {
+  const sb = getClient();
+  const { data, error } = await sb
+    .from('migration_archives')
+    .select('id, name, source_url, platform, post_count, image_count, created_at')
+    .eq('client_id', clientId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+/**
+ * Full archive row, including the post/image payload. Used at preview and
+ * import time.
+ */
+async function getMigrationArchive(archiveId) {
+  const sb = getClient();
+  const { data, error } = await sb
+    .from('migration_archives')
+    .select('*')
+    .eq('id', archiveId)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+async function deleteMigrationArchive(archiveId) {
+  const sb = getClient();
+  const { error } = await sb.from('migration_archives').delete().eq('id', archiveId);
+  if (error) throw error;
+}
+
 module.exports = {
   getClient,
   normalizeDomain,
@@ -605,4 +680,8 @@ module.exports = {
   saveSeoOptimizations,
   saveSchemaOptimizations,
   getOptimizationHistory,
+  createMigrationArchive,
+  listMigrationArchives,
+  getMigrationArchive,
+  deleteMigrationArchive,
 };

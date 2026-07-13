@@ -1582,6 +1582,17 @@ async function fetchSourcePage(url) {
   return html;
 }
 
+// Shared by the live push flow and the archive flow — both need to fetch an
+// image's bytes once and hand back a Node Buffer + filename + mime type.
+async function downloadImage(absUrl) {
+  const downloaded = await fetch(absUrl, { signal: AbortSignal.timeout(60_000) });
+  if (!downloaded.ok) throw new Error(`HTTP ${downloaded.status} fetching ${absUrl}`);
+  const buf = Buffer.from(await downloaded.arrayBuffer());
+  const mimeType = downloaded.headers.get('content-type') || 'application/octet-stream';
+  const filename = (absUrl.split('/').pop() || `img-${Date.now()}`).split('?')[0].slice(0, 100) || `img-${Date.now()}.jpg`;
+  return { buf, mimeType, filename };
+}
+
 async function tryFetchRss(siteUrl) {
   if (!siteUrl) return { url: null, xml: null };
   const origin = (() => { try { return new URL(siteUrl).origin; } catch (_) { return ''; } })();
@@ -1986,41 +1997,39 @@ app.post('/api/migrate/:crawlId/push', async (req, res) => {
           continue;
         }
 
-        const inlineImages = migrate.extractInlineImages(rawBody);
-        let featuredOriginalSrc = null;
-        const urlMap = {};
-        let featuredMediaId = null;
-
         // Prefer the source page's declared featured image (og:image et al.)
         // over "first inline image in the body" — it's the post's actual
         // thumbnail, and many posts never repeat it in the body markup.
-        if (migrate_images && htmlMeta.featured_image) {
-          const featAbsUrl = migrate.absoluteUrl(htmlMeta.featured_image, post.url);
-          try {
-            await gate();
-            const downloaded = await fetch(featAbsUrl, { signal: AbortSignal.timeout(60_000) });
-            if (!downloaded.ok) throw new Error(`HTTP ${downloaded.status} fetching ${featAbsUrl}`);
-            const buf = Buffer.from(await downloaded.arrayBuffer());
-            const mimeType = downloaded.headers.get('content-type') || 'application/octet-stream';
-            const filename = (featAbsUrl.split('/').pop() || `img-${Date.now()}`).split('?')[0].slice(0, 100) || `img-${Date.now()}.jpg`;
+        // Candidates are tried in order and we stop at the first upload
+        // that succeeds, so a broken og:image URL falls back to the first
+        // inline image instead of leaving the post with no featured image.
+        const { candidates: featuredCandidates, inlineImages } =
+          migrate.featuredImageCandidates(rawBody, htmlMeta, post.url);
+        const urlMap = {};
+        let featuredMediaId = null;
+        let featuredOriginalSrc = null;
 
-            await gate();
-            const uploaded = await wpMigrate.uploadMedia(client.wp_url, auth, {
-              buffer:   buf,
-              filename,
-              mimeType,
-              alt:      post.title,
-            });
-            mediaCache.set(featAbsUrl, uploaded.source_url);
-            featuredMediaId = uploaded.media_id;
-            // If the same image also appears inline, drop that copy from the
-            // body so it doesn't render twice.
-            const inlineDup = inlineImages.find(img =>
-              migrate.absoluteUrl(img.original_url, post.url) === featAbsUrl);
-            if (inlineDup) featuredOriginalSrc = inlineDup.original_url;
-            emit('image_uploaded', { url: post.url, source: featAbsUrl, media_id: uploaded.media_id, featured: true });
-          } catch (imgErr) {
-            emit('image_failed', { url: post.url, source: featAbsUrl, error: imgErr.message });
+        if (migrate_images) {
+          for (const cand of featuredCandidates) {
+            try {
+              await gate();
+              const dl = await downloadImage(cand.absUrl);
+              await gate();
+              const uploaded = await wpMigrate.uploadMedia(client.wp_url, auth, {
+                buffer:   dl.buf,
+                filename: dl.filename,
+                mimeType: dl.mimeType,
+                alt:      post.title,
+              });
+              featuredMediaId     = uploaded.media_id;
+              featuredOriginalSrc = cand.rawSrc;
+              mediaCache.set(cand.absUrl, uploaded.source_url);
+              emit('image_uploaded', { url: post.url, source: cand.absUrl, media_id: uploaded.media_id, featured: true });
+              break;
+            } catch (imgErr) {
+              emit('image_failed', { url: post.url, source: cand.absUrl, error: imgErr.message });
+              // fall through to the next candidate (og:image failed → try first inline)
+            }
           }
         }
 
@@ -2028,6 +2037,7 @@ app.post('/api/migrate/:crawlId/push', async (req, res) => {
           for (let i = 0; i < inlineImages.length; i++) {
             if (cancelled) break;
             const img = inlineImages[i];
+            if (img.original_url === featuredOriginalSrc) continue; // already uploaded above
             const absUrl = migrate.absoluteUrl(img.original_url, post.url);
             if (mediaCache.has(absUrl)) {
               urlMap[img.original_url] = mediaCache.get(absUrl);
@@ -2035,25 +2045,16 @@ app.post('/api/migrate/:crawlId/push', async (req, res) => {
             }
             try {
               await gate();
-              const downloaded = await fetch(absUrl, { signal: AbortSignal.timeout(60_000) });
-              if (!downloaded.ok) throw new Error(`HTTP ${downloaded.status} fetching ${absUrl}`);
-              const buf = Buffer.from(await downloaded.arrayBuffer());
-              const mimeType = downloaded.headers.get('content-type') || 'application/octet-stream';
-              const filename = (absUrl.split('/').pop() || `img-${Date.now()}`).split('?')[0].slice(0, 100) || `img-${Date.now()}.jpg`;
-
+              const dl = await downloadImage(absUrl);
               await gate();
               const uploaded = await wpMigrate.uploadMedia(client.wp_url, auth, {
-                buffer:   buf,
-                filename,
-                mimeType,
+                buffer:   dl.buf,
+                filename: dl.filename,
+                mimeType: dl.mimeType,
                 alt:      img.alt || post.title,
               });
               urlMap[img.original_url] = uploaded.source_url;
               mediaCache.set(absUrl, uploaded.source_url);
-              if (featuredMediaId == null) {
-                featuredMediaId    = uploaded.media_id;
-                featuredOriginalSrc = img.original_url;
-              }
               emit('image_uploaded', { url: post.url, source: absUrl, media_id: uploaded.media_id });
             } catch (imgErr) {
               emit('image_failed', { url: post.url, source: absUrl, error: imgErr.message });
@@ -2134,6 +2135,418 @@ app.post('/api/migrate/:crawlId/push', async (req, res) => {
     emit('error', { message: err.message });
   }
   res.end();
+});
+
+// ─── Migration archives ───────────────────────────────────────────────────────
+// Freezes selected posts' extracted HTML + metadata + image bytes right now,
+// so the migration can finish later even if the source site goes down in
+// the meantime (e.g. mid-migration, decommissioning the old site). Import
+// re-runs the exact same upload/create-post logic as /push, sourced from
+// the archive's stored bytes instead of a live fetch.
+
+// POST /api/migrate/:crawlId/archive
+//   body: { urls: [...], name? }
+//   SSE stream of per-post progress; ends with { archive_id, ... } on success.
+app.post('/api/migrate/:crawlId/archive', async (req, res) => {
+  const { urls, name } = req.body || {};
+  if (!Array.isArray(urls) || urls.length === 0) {
+    return res.status(400).json({ error: 'urls array is required' });
+  }
+
+  let crawl, client;
+  try {
+    ({ crawl, client } = await resolveCrawlAndClient(req.params.crawlId));
+    if (!crawl)  return res.status(404).json({ error: 'Crawl not found' });
+    if (!client) return res.status(404).json({ error: 'Client not found for this crawl' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+
+  const emit = sseEmitter(res);
+  let cancelled = false;
+  req.on('close', () => { cancelled = true; });
+
+  try {
+    emit('log', { message: `Loading ${urls.length} page${urls.length === 1 ? '' : 's'} from crawl data...` });
+    const allPages = await store.getCrawlPages(crawl.id);
+    const urlSet   = new Set(urls);
+    const selected = allPages.filter(p => urlSet.has(p.url));
+    if (selected.length === 0) {
+      emit('error', { message: 'No matching pages found for the provided URLs.' });
+      return res.end();
+    }
+
+    const candidates = migrate.pagesAsCandidates(selected);
+    const rssFound = await tryFetchRss(crawl.target_url).catch(() => ({ xml: null }));
+    const rssItems = rssFound.xml ? migrate.parseRssFeed(rssFound.xml) : [];
+    const enriched = migrate.mergeRssWithPages(rssItems, candidates);
+
+    let platform = migrate.detectPlatform(crawl.target_url, '');
+    emit('log', {
+      message: `${rssItems.length} RSS items merged. Fetching + downloading ${enriched.length} ` +
+                `post${enriched.length === 1 ? '' : 's'} now, before continuing (this can take a while).`,
+    });
+
+    const archivedPosts = [];
+    const errors        = [];
+
+    for (const post of enriched) {
+      if (cancelled) {
+        emit('log', { message: 'Cancelled by client. Stopping further archiving.' });
+        break;
+      }
+      emit('post_started', { url: post.url, title: post.title });
+      try {
+        const fullHtml = await fetchSourcePage(post.url);
+        if (platform === 'unknown') platform = migrate.detectPlatform(crawl.target_url, fullHtml);
+
+        const { record, events } = await migrate.buildArchivedPost(post, fullHtml, platform, downloadImage);
+        for (const ev of events) {
+          emit(ev.type, { url: post.url, source: ev.source, featured: ev.featured, error: ev.error });
+        }
+        archivedPosts.push(record);
+        emit('post_archived', {
+          url: post.url,
+          title: record.title,
+          image_count: record.images.length + (record.featured_image ? 1 : 0),
+        });
+      } catch (e) {
+        errors.push({ url: post.url, error: e.message });
+        emit('post_failed', { url: post.url, error: e.message });
+      }
+    }
+
+    if (archivedPosts.length === 0) {
+      emit('error', { message: 'Could not archive any posts. See errors above.' });
+      return res.end();
+    }
+
+    const domain   = (crawl.clients && crawl.clients.domain) || client.domain || 'site';
+    const dateStr  = new Date().toISOString().split('T')[0];
+    const archiveName = (name || '').trim() || `${domain} blog archive — ${dateStr}`;
+    const imageCount  = archivedPosts.reduce((n, p) => n + p.images.length + (p.featured_image ? 1 : 0), 0);
+    const data = {
+      version:     1,
+      source_url:  crawl.target_url,
+      platform,
+      exported_at: new Date().toISOString(),
+      posts:       archivedPosts,
+      errors,
+    };
+
+    const archiveId = await store.createMigrationArchive({
+      clientId:   client.id,
+      crawlId:    crawl.id,
+      name:       archiveName,
+      sourceUrl:  crawl.target_url,
+      platform,
+      postCount:  archivedPosts.length,
+      imageCount,
+      data,
+    });
+
+    emit('done', {
+      archive_id: archiveId,
+      name:       archiveName,
+      post_count: archivedPosts.length,
+      image_count: imageCount,
+      failed:     errors.length,
+      total:      enriched.length,
+      cancelled,
+    });
+  } catch (err) {
+    console.error('[migrate archive] error:', err);
+    emit('error', { message: err.message });
+  }
+  res.end();
+});
+
+// GET /api/migrate/:crawlId/archives
+//   Lightweight list of archives saved for this crawl's client.
+app.get('/api/migrate/:crawlId/archives', async (req, res) => {
+  try {
+    const { crawl, client } = await resolveCrawlAndClient(req.params.crawlId);
+    if (!crawl) return res.status(404).json({ error: 'Crawl not found' });
+    if (!client) return res.json({ archives: [] });
+    const archives = await store.listMigrationArchives(client.id);
+    res.json({ archives });
+  } catch (err) {
+    console.error('[migrate archives list] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/migrate/:crawlId/archives/:archiveId/preview
+//   Builds a sample-test-shaped response (3 representative posts) directly
+//   from the archive's stored bytes — no live fetch. Image srcs are
+//   rewritten to data: URLs so the preview renders even if the source site
+//   is already gone. Marks this crawl's session sampleOk, same as sample-test.
+app.get('/api/migrate/:crawlId/archives/:archiveId/preview', async (req, res) => {
+  try {
+    const { crawl, client } = await resolveCrawlAndClient(req.params.crawlId);
+    if (!crawl) return res.status(404).json({ error: 'Crawl not found' });
+
+    const archive = await store.getMigrationArchive(req.params.archiveId);
+    if (!archive || !client || archive.client_id !== client.id) {
+      return res.status(404).json({ error: 'Archive not found for this client' });
+    }
+
+    const posts = (archive.data && archive.data.posts) || [];
+    const picks = migrate.pickRepresentativeSamples(
+      posts.map(p => ({ ...p, image_count: (p.images || []).length + (p.featured_image ? 1 : 0) }))
+    );
+
+    const samples = picks.map(p => {
+      const previewMap = {};
+      (p.images || []).forEach(img => {
+        previewMap[img.original_url] = `data:${img.mime_type};base64,${img.data_base64}`;
+      });
+      const previewRaw        = migrate.rewriteImageUrls(p.html, previewMap);
+      const previewNormalized = migrate.normalizePostBody(previewRaw, { platform: archive.platform });
+      const featuredDataUrl   = p.featured_image
+        ? `data:${p.featured_image.mime_type};base64,${p.featured_image.data_base64}`
+        : null;
+
+      return {
+        url:      p.url,
+        platform: archive.platform,
+        metadata: {
+          title:    p.title,
+          slug:     p.slug,
+          pub_date: p.pub_date,
+          author:   p.author,
+          category: p.category,
+          featured_image: featuredDataUrl,
+          // the img src above is a data: URL (so it renders without the
+          // source site); this keeps the on-screen label/tooltip readable.
+          featured_image_label: p.featured_image ? p.featured_image.original_url : null,
+        },
+        raw_html:        previewRaw,
+        normalized_html: previewNormalized,
+        images: (p.images || []).map(img => ({
+          original_url: img.original_url,
+          preview_src:  `data:${img.mime_type};base64,${img.data_base64}`,
+          alt:          img.alt,
+          width:        img.width,
+          height:       img.height,
+        })),
+      };
+    });
+
+    migrateSession(crawl.id).sampleOk = true;
+    res.json({
+      samples,
+      platform: archive.platform,
+      errors:   [],
+      archive:  { id: archive.id, name: archive.name, post_count: archive.post_count, image_count: archive.image_count },
+    });
+  } catch (err) {
+    console.error('[migrate archive preview] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/migrate/:crawlId/archives/:archiveId/import
+//   body: { migrate_images?, post_status?, category_map?, additional_category? }
+//   SSE stream, same event shapes as /push. Imports every post in the
+//   archive — the URL selection already happened when the archive was
+//   created. Requires the same sampleOk/connectionOk gate as /push (run
+//   the preview above, then a connection test, before importing).
+app.post('/api/migrate/:crawlId/archives/:archiveId/import', async (req, res) => {
+  const {
+    migrate_images      = true,
+    post_status         = 'draft',
+    category_map        = {},
+    additional_category = null,
+  } = req.body || {};
+
+  if (post_status !== 'draft' && post_status !== 'publish') {
+    return res.status(400).json({ error: 'post_status must be "draft" or "publish"' });
+  }
+
+  let crawl, client, archive;
+  try {
+    ({ crawl, client } = await resolveCrawlAndClient(req.params.crawlId));
+    if (!crawl) return res.status(404).json({ error: 'Crawl not found' });
+    if (!client || !client.wp_url || !client.wp_username || !client.wp_app_password) {
+      return res.status(400).json({ error: 'WordPress credentials not configured for this client' });
+    }
+    archive = await store.getMigrationArchive(req.params.archiveId);
+    if (!archive || archive.client_id !== client.id) {
+      return res.status(404).json({ error: 'Archive not found for this client' });
+    }
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+
+  const sess = migrateSession(crawl.id);
+  if (!sess.sampleOk || !sess.connectionOk) {
+    return res.status(412).json({
+      error: 'Verification gate not satisfied. Preview the archive and run connection-test successfully in this session before importing.',
+      sampleOk:     sess.sampleOk,
+      connectionOk: sess.connectionOk,
+    });
+  }
+
+  const auth = { username: client.wp_username, appPassword: client.wp_app_password };
+  const emit = sseEmitter(res);
+  let cancelled = false;
+  req.on('close', () => { cancelled = true; });
+
+  try {
+    const posts = (archive.data && archive.data.posts) || [];
+    emit('log', { message: `Importing ${posts.length} archived post${posts.length === 1 ? '' : 's'} from "${archive.name}"...` });
+
+    const termCache = wpMigrate.makeTermCache();
+    const gate      = wpMigrate.rateLimiter(700);
+
+    let additionalCategoryId = null;
+    if (additional_category && String(additional_category).trim()) {
+      const catName = String(additional_category).trim();
+      try {
+        await gate();
+        additionalCategoryId = await wpMigrate.ensureCategory(client.wp_url, auth, catName, termCache);
+        emit('log', { message: `Tagging every post with category "${catName}" (id ${additionalCategoryId}).` });
+      } catch (e) {
+        emit('log', { message: `Warning: could not ensure category "${catName}": ${e.message}. Continuing without it.` });
+      }
+    }
+
+    let created = 0, failed = 0, skipped = 0;
+
+    for (const post of posts) {
+      if (cancelled) {
+        emit('log', { message: 'Cancelled by client. Stopping further imports.' });
+        break;
+      }
+      emit('post_started', { url: post.url, title: post.title });
+      try {
+        await gate();
+        const existing = await wpMigrate.findPostBySlug(client.wp_url, auth, post.slug).catch(() => null);
+        if (existing) {
+          skipped++;
+          emit('post_failed', {
+            url:     post.url,
+            error:   `Post with slug "${post.slug}" already exists in destination (id ${existing.id}). Skipping to avoid duplicate.`,
+            skipped: true,
+          });
+          continue;
+        }
+
+        const urlMap = {};
+        let featuredMediaId = null;
+
+        if (migrate_images && post.featured_image) {
+          try {
+            await gate();
+            const buf = Buffer.from(post.featured_image.data_base64, 'base64');
+            const uploaded = await wpMigrate.uploadMedia(client.wp_url, auth, {
+              buffer:   buf,
+              filename: post.featured_image.filename,
+              mimeType: post.featured_image.mime_type,
+              alt:      post.title,
+            });
+            featuredMediaId = uploaded.media_id;
+            emit('image_uploaded', { url: post.url, source: post.featured_image.original_url, media_id: uploaded.media_id, featured: true });
+          } catch (imgErr) {
+            emit('image_failed', { url: post.url, source: post.featured_image.original_url, error: imgErr.message });
+          }
+        }
+
+        if (migrate_images) {
+          for (const img of (post.images || [])) {
+            if (cancelled) break;
+            try {
+              await gate();
+              const buf = Buffer.from(img.data_base64, 'base64');
+              const uploaded = await wpMigrate.uploadMedia(client.wp_url, auth, {
+                buffer:   buf,
+                filename: img.filename,
+                mimeType: img.mime_type,
+                alt:      img.alt || post.title,
+              });
+              urlMap[img.original_url] = uploaded.source_url;
+              emit('image_uploaded', { url: post.url, source: img.original_url, media_id: uploaded.media_id });
+            } catch (imgErr) {
+              emit('image_failed', { url: post.url, source: img.original_url, error: imgErr.message });
+            }
+          }
+        }
+
+        const rewritten = migrate.rewriteImageUrls(post.html, urlMap);
+        const finalHtml  = migrate.normalizePostBody(rewritten, { platform: archive.platform });
+
+        const categoryIds = [];
+        if (additionalCategoryId) categoryIds.push(additionalCategoryId);
+        if (post.category) {
+          const mapped = category_map[post.category] || post.category;
+          try {
+            await gate();
+            const id = await wpMigrate.ensureCategory(client.wp_url, auth, mapped, termCache);
+            if (id && !categoryIds.includes(id)) categoryIds.push(id);
+          } catch (_) { /* non-fatal */ }
+        }
+
+        let isoDate = null;
+        if (post.pub_date) {
+          const d = new Date(post.pub_date);
+          if (!isNaN(d.getTime())) isoDate = d.toISOString();
+        }
+
+        await gate();
+        const result = await wpMigrate.createPost(client.wp_url, auth, {
+          title:          post.title || '(untitled)',
+          content:        finalHtml,
+          status:         post_status,
+          slug:           post.slug,
+          date:           isoDate,
+          featured_media: featuredMediaId,
+          categories:     categoryIds,
+          tags:           [],
+        });
+
+        created++;
+        emit('post_created', {
+          url:      post.url,
+          post_id:  result.post_id,
+          post_url: result.post_url,
+          status:   result.status,
+        });
+      } catch (e) {
+        failed++;
+        emit('post_failed', { url: post.url, error: e.message });
+      }
+    }
+
+    emit('done', {
+      total:     posts.length,
+      created,
+      failed,
+      skipped,
+      cancelled,
+    });
+  } catch (err) {
+    console.error('[migrate archive import] error:', err);
+    emit('error', { message: err.message });
+  }
+  res.end();
+});
+
+// DELETE /api/migrate/:crawlId/archives/:archiveId
+app.delete('/api/migrate/:crawlId/archives/:archiveId', async (req, res) => {
+  try {
+    const { crawl, client } = await resolveCrawlAndClient(req.params.crawlId);
+    if (!crawl) return res.status(404).json({ error: 'Crawl not found' });
+    const archive = await store.getMigrationArchive(req.params.archiveId);
+    if (!archive || !client || archive.client_id !== client.id) {
+      return res.status(404).json({ error: 'Archive not found for this client' });
+    }
+    await store.deleteMigrationArchive(archive.id);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[migrate archive delete] error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ─── Brand Voice cross-tool API (authenticated) ───────────────────────────────
