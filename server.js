@@ -839,7 +839,7 @@ app.post('/api/optimize/:crawlId/seo/generate', async (req, res) => {
 
       const stream = anthropic.messages.stream({
         model:      'claude-opus-4-7',
-        max_tokens: 8192,
+        max_tokens: 20000,
         thinking:   { type: 'adaptive' },
         system: [{ type: 'text', text: SEO_SYSTEM, cache_control: { type: 'ephemeral' } }],
         messages: [{ role: 'user', content: userContent }],
@@ -854,7 +854,8 @@ app.post('/api/optimize/:crawlId/seo/generate', async (req, res) => {
       const batchResults = parseClaudeJson(fullText, 'seo generate');
       if (!Array.isArray(batchResults)) {
         failedBatches++;
-        emit('log', { message: `Warning: could not parse batch ${Math.floor(i / BATCH_SIZE) + 1} response — skipping.` });
+        const snippet = fullText.trim().slice(0, 300) || '(empty response)';
+        emit('log', { message: `Warning: could not parse batch ${Math.floor(i / BATCH_SIZE) + 1} response — skipping. Raw output started with: ${snippet}` });
         continue;
       }
       proposals.push(...batchResults);
@@ -1274,7 +1275,7 @@ app.post('/api/optimize/:crawlId/schema/scan-analyze', async (req, res) => {
 
       const stream = anthropic.messages.stream({
         model:      'claude-opus-4-7',
-        max_tokens: 8192,
+        max_tokens: 20000,
         thinking:   { type: 'adaptive' },
         system: [{ type: 'text', text: SCHEMA_SYSTEM, cache_control: { type: 'ephemeral' } }],
         messages: [{ role: 'user', content: userContent }],
@@ -1289,7 +1290,8 @@ app.post('/api/optimize/:crawlId/schema/scan-analyze', async (req, res) => {
       let batchResults = parseClaudeJson(fullText, 'schema scan-analyze');
       if (!Array.isArray(batchResults)) {
         failedBatches++;
-        emit('log', { message: `Warning: could not parse schema batch ${Math.floor(i / BATCH_SIZE) + 1} — skipping.` });
+        const snippet = fullText.trim().slice(0, 300) || '(empty response)';
+        emit('log', { message: `Warning: could not parse schema batch ${Math.floor(i / BATCH_SIZE) + 1} — skipping. Raw output started with: ${snippet}` });
         continue;
       }
 
