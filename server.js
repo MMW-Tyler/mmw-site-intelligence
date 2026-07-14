@@ -707,6 +707,22 @@ function sseEmitter(res) {
   return (type, data) => { try { res.write(`data: ${JSON.stringify({ type, ...data })}\n\n`); } catch (_) {} };
 }
 
+// Helper: parse a JSON array/object out of Claude's text output, tolerating
+// code fences (with or without a language tag) and stray preamble/trailing text.
+function parseClaudeJson(text, logLabel) {
+  let cleaned = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+  try { return JSON.parse(cleaned); } catch (_) {}
+
+  const first = cleaned.search(/[[{]/);
+  const last  = Math.max(cleaned.lastIndexOf(']'), cleaned.lastIndexOf('}'));
+  if (first !== -1 && last > first) {
+    try { return JSON.parse(cleaned.slice(first, last + 1)); } catch (_) {}
+  }
+
+  console.error(`[${logLabel}] failed to parse Claude JSON output:`, text);
+  return null;
+}
+
 // GET /api/optimize/:crawlId/connection — return WP credentials (password redacted) for UI
 app.get('/api/optimize/:crawlId/connection', async (req, res) => {
   try {
@@ -808,6 +824,8 @@ app.post('/api/optimize/:crawlId/seo/generate', async (req, res) => {
     const anthropic  = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const BATCH_SIZE = 10;
     const proposals  = [];
+    const totalBatches = Math.ceil(selected.length / BATCH_SIZE);
+    let failedBatches = 0;
 
     const ac = new AbortController();
     req.on('close', () => ac.abort());
@@ -821,7 +839,7 @@ app.post('/api/optimize/:crawlId/seo/generate', async (req, res) => {
 
       const stream = anthropic.messages.stream({
         model:      'claude-opus-4-7',
-        max_tokens: 4096,
+        max_tokens: 8192,
         thinking:   { type: 'adaptive' },
         system: [{ type: 'text', text: SEO_SYSTEM, cache_control: { type: 'ephemeral' } }],
         messages: [{ role: 'user', content: userContent }],
@@ -833,16 +851,20 @@ app.post('/api/optimize/:crawlId/seo/generate', async (req, res) => {
         }
       }
 
-      const cleaned = fullText.trim().replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
-      let batchResults;
-      try { batchResults = JSON.parse(cleaned); } catch (_) {
+      const batchResults = parseClaudeJson(fullText, 'seo generate');
+      if (!Array.isArray(batchResults)) {
+        failedBatches++;
         emit('log', { message: `Warning: could not parse batch ${Math.floor(i / BATCH_SIZE) + 1} response — skipping.` });
         continue;
       }
-      if (Array.isArray(batchResults)) proposals.push(...batchResults);
+      proposals.push(...batchResults);
     }
 
-    emit('done', { proposals });
+    if (proposals.length === 0 && failedBatches > 0) {
+      emit('error', { message: `Claude's response could not be parsed for ${failedBatches} of ${totalBatches} batch(es), so no proposals were generated. Try again, or re-run with fewer pages selected.` });
+      return res.end();
+    }
+    emit('done', { proposals, failedBatches });
   } catch (err) {
     console.error('[seo generate] error:', err);
     emit('error', { message: err.message });
@@ -1232,6 +1254,8 @@ app.post('/api/optimize/:crawlId/schema/scan-analyze', async (req, res) => {
     const clientName   = (client.clients && client.clients.name) || client.name || '';
     const BATCH_SIZE   = 5;
     const allProposals = [];
+    const totalBatches = Math.ceil(selected.length / BATCH_SIZE);
+    let failedBatches  = 0;
 
     const ac = new AbortController();
     req.on('close', () => ac.abort());
@@ -1262,9 +1286,9 @@ app.post('/api/optimize/:crawlId/schema/scan-analyze', async (req, res) => {
         }
       }
 
-      const cleaned = fullText.trim().replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
-      let batchResults = [];
-      try { batchResults = JSON.parse(cleaned); } catch (_) {
+      let batchResults = parseClaudeJson(fullText, 'schema scan-analyze');
+      if (!Array.isArray(batchResults)) {
+        failedBatches++;
         emit('log', { message: `Warning: could not parse schema batch ${Math.floor(i / BATCH_SIZE) + 1} — skipping.` });
         continue;
       }
@@ -1307,7 +1331,11 @@ app.post('/api/optimize/:crawlId/schema/scan-analyze', async (req, res) => {
       emit('log', { message: `⚠ ${invalidCount} schema${invalidCount === 1 ? '' : 's'} flagged by schema.org validator — review before pushing.` });
     }
 
-    emit('done', { proposals: allProposals });
+    if (allProposals.length === 0 && failedBatches > 0) {
+      emit('error', { message: `Claude's response could not be parsed for ${failedBatches} of ${totalBatches} batch(es), so no proposals were generated. Try again, or re-run with fewer pages selected.` });
+      return res.end();
+    }
+    emit('done', { proposals: allProposals, failedBatches });
   } catch (err) {
     console.error('[schema scan-analyze] error:', err);
     emit('error', { message: err.message });

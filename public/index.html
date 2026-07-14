@@ -4185,6 +4185,9 @@
           } else if (data.type === 'done') {
             gotDone = true;
             optState.seoProposals = data.proposals || [];
+            if (data.failedBatches) {
+              addLog(`⚠ ${data.failedBatches} batch(es) could not be parsed and were skipped — some pages may be missing below.`);
+            }
             renderSeoResults();
             showSeoState('results');
             return;
@@ -4407,6 +4410,9 @@
           } else if (data.type === 'done') {
             gotDone = true;
             optState.schemaProposals = data.proposals || [];
+            if (data.failedBatches) {
+              addLog(`⚠ ${data.failedBatches} batch(es) could not be parsed and were skipped — some pages may be missing below.`);
+            }
             renderSchemaProposals();
             showSchemaState('results');
             return;
